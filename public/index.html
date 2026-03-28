@@ -42,6 +42,29 @@
           <div id="mode-options" class="mode-options"></div>
         </fieldset>
 
+        <label class="field-label" for="local-players-select">Players on this device</label>
+        <p class="field-hint">
+          <strong>1</strong> — online from this machine (or open other tabs / invite with the room code).
+          <strong>2–4</strong> — couch co-op: extra players on the same keyboard (see controls in-game).
+        </p>
+        <select id="local-players-select" class="field-input" aria-label="Number of local players">
+          <option value="1">1 — one keyboard (defaults: WASD / arrows + Space)</option>
+          <option value="2">2 — couch (defaults per seat below)</option>
+          <option value="3">3 — couch + IJKL</option>
+          <option value="4">4 — couch + numpad</option>
+        </select>
+
+        <details class="keybind-details">
+          <summary class="keybind-summary">Customize keyboard (per seat)</summary>
+          <p class="field-hint keybind-hint">
+            Click a control, then press a key. Hold <strong>Alt</strong> while pressing to add a second key for the same action (for example WASD and arrows together). Escape cancels.
+          </p>
+          <div id="keybind-panel" class="keybind-panel" aria-label="Keyboard bindings"></div>
+          <button type="button" id="btn-reset-keybinds" class="btn-secondary btn-reset-keybinds">
+            Reset all bindings to defaults
+          </button>
+        </details>
+
         <p id="lobby-error" class="lobby-error" role="alert" hidden></p>
 
         <button type="button" id="btn-play" class="btn-primary">Play</button>
@@ -56,7 +79,7 @@
           <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
           <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
         </div>
-        <p class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
+        <p id="game-hint" class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
         <div id="scores" class="scores-bar"></div>
       </header>
       <div id="canvas-wrap" class="canvas-wrap">

@@ -29,7 +29,9 @@ const BULLET_OWNER_GRACE_MS = 180;
 const ENEMY_PATH_REPLAN = 12;
 const ENEMY_BASE_COUNT = 2;
 const ENEMY_PER_HUMAN = 1;
-const ENEMY_CAP = 7;
+const ENEMY_CAP = 10;
+/** Pause (ms) after clearing a wave before the next spawn. */
+const PVE_INTERMISSION_MS = 3200;
 
 /** Outer bounds only (always present). */
 function outerBorderWalls() {
@@ -288,10 +290,6 @@ function wrapAngle(d) {
   return d;
 }
 
-function isEnemyOwnerId(id) {
-  return typeof id === "string" && id.startsWith("enemy-");
-}
-
 function circleRectOverlap(cx, cy, r, rect) {
   const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
   const ny = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
@@ -360,10 +358,17 @@ export class GameRoom {
     this.walls = generated.walls;
     this.maze = generated.maze;
     this.enemies = [];
+    /** PvE waves (PvE only). */
+    this.pveWave = 1;
+    /** When > 0, timestamp (ms) until next wave spawns. */
+    this.pveIntermissionEnd = 0;
   }
 
-  _desiredEnemyCount() {
-    return Math.min(ENEMY_CAP, ENEMY_BASE_COUNT + ENEMY_PER_HUMAN * Math.max(1, this.players.size));
+  _pveEnemiesToSpawnThisWave() {
+    return Math.min(
+      ENEMY_CAP,
+      ENEMY_BASE_COUNT + (this.pveWave - 1) + ENEMY_PER_HUMAN * this.players.size,
+    );
   }
 
   _spawnEnemyUnit() {
@@ -385,10 +390,19 @@ export class GameRoom {
     });
   }
 
-  _syncEnemyCount() {
+  /** Replace enemy list with a full wave (call when starting wave 1 or after intermission). */
+  _pveSpawnWave() {
     if (this.mode !== "pve") return;
-    const want = this._desiredEnemyCount();
-    while (this.enemies.length < want) this._spawnEnemyUnit();
+    this.enemies = [];
+    const n = this._pveEnemiesToSpawnThisWave();
+    for (let i = 0; i < n; i++) this._spawnEnemyUnit();
+  }
+
+  _pveMaybeSpawnInitialWave() {
+    if (this.mode !== "pve") return;
+    if (this.pveIntermissionEnd !== 0) return;
+    if (this.enemies.length > 0) return;
+    this._pveSpawnWave();
   }
 
   addPlayer(id, name) {
@@ -406,7 +420,7 @@ export class GameRoom {
       lastFire: 0,
       input: { forward: false, back: false, left: false, right: false, fire: false },
     });
-    this._syncEnemyCount();
+    this._pveMaybeSpawnInitialWave();
   }
 
   removePlayer(id) {
@@ -569,6 +583,12 @@ export class GameRoom {
   step(now) {
     this.tick++;
 
+    if (this.mode === "pve" && this.pveIntermissionEnd > 0 && now >= this.pveIntermissionEnd) {
+      this.pveIntermissionEnd = 0;
+      this.pveWave += 1;
+      this._pveSpawnWave();
+    }
+
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       this._applyTankPhysics(p, p.input);
@@ -621,33 +641,40 @@ export class GameRoom {
       b.vx = vx;
       b.vy = vy;
 
-      if (this.mode === "pve" && !isEnemyOwnerId(b.ownerId)) {
+      const ownerIsHuman = this.players.has(b.ownerId);
+      if (this.mode === "pve" && ownerIsHuman) {
         for (const e of this.enemies) {
           if (!e.alive) continue;
           const d = Math.hypot(e.x - b.x, e.y - b.y);
           if (d < TANK_R + BULLET_R - 0.5) {
             const killer = this.players.get(b.ownerId);
             if (killer) killer.score += 1;
-            this.deathEvents += 1;
             dead = true;
-            this._respawnTankAtRandom(e);
+            e.alive = false;
             break;
           }
         }
       }
 
       if (!dead) {
-        for (const p of this.players.values()) {
-          if (!p.alive) continue;
-          if (p.id === b.ownerId && now - b.born < BULLET_OWNER_GRACE_MS) continue;
-          const d = Math.hypot(p.x - b.x, p.y - b.y);
-          if (d < TANK_R + BULLET_R - 0.5) {
-            const killer = this.players.get(b.ownerId);
-            if (killer && killer.id !== p.id) killer.score += 1;
-            this.deathEvents += 1;
-            dead = true;
-            this._respawnTankAtRandom(p);
-            break;
+        if (this.mode === "pve" && ownerIsHuman) {
+          /* Human-owned shots never damage players (no FF, no ricochet self-hit). */
+        } else {
+          for (const p of this.players.values()) {
+            if (!p.alive) continue;
+            if (p.id === b.ownerId) {
+              if (this.mode === "pve") continue;
+              if (now - b.born < BULLET_OWNER_GRACE_MS) continue;
+            }
+            const d = Math.hypot(p.x - b.x, p.y - b.y);
+            if (d < TANK_R + BULLET_R - 0.5) {
+              const killer = this.players.get(b.ownerId);
+              if (killer && killer.id !== p.id) killer.score += 1;
+              this.deathEvents += 1;
+              dead = true;
+              this._respawnTankAtRandom(p);
+              break;
+            }
           }
         }
       }
@@ -655,6 +682,13 @@ export class GameRoom {
       if (!dead) nextBullets.push(b);
     }
     this.bullets = nextBullets;
+
+    if (this.mode === "pve" && this.pveIntermissionEnd === 0 && this.enemies.length > 0) {
+      if (!this.enemies.some((e) => e.alive)) {
+        this.pveIntermissionEnd = now + PVE_INTERMISSION_MS;
+        this.bullets = [];
+      }
+    }
   }
 
   getSnapshot() {
@@ -681,6 +715,8 @@ export class GameRoom {
       tick: this.tick,
     };
     if (this.mode === "pve") {
+      snap.pveWave = this.pveWave;
+      snap.pveIntermissionEnd = this.pveIntermissionEnd;
       snap.enemies = this.enemies.map((e) => ({
         id: e.id,
         name: e.name,

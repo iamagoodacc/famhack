@@ -192,6 +192,99 @@ body.game-active {
   vertical-align: middle;
 }
 
+.keybind-details {
+  margin-top: 1rem;
+  padding: 0.75rem 0.85rem;
+  background: #1a120b;
+  border: 1px solid #5a4030;
+  border-radius: 8px;
+}
+
+.keybind-summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #e8d4b8;
+}
+
+.keybind-hint {
+  margin-top: 0.65rem;
+  margin-bottom: 0.5rem;
+}
+
+.keybind-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.keybind-seat {
+  border-top: 1px solid #3d2e20;
+  padding-top: 0.65rem;
+}
+
+.keybind-seat:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.keybind-seat-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #d4a24c;
+  margin: 0 0 0.45rem;
+}
+
+.keybind-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.keybind-row label {
+  color: #b8a08a;
+  text-transform: capitalize;
+}
+
+.keybind-bind {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.78rem;
+  color: #f0e6d8;
+  background: #261a10;
+  border: 1px solid #5a4030;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.keybind-bind:hover {
+  border-color: #7a6050;
+}
+
+.keybind-bind.is-capturing {
+  border-color: #d4a24c;
+  box-shadow: 0 0 0 2px rgba(212, 162, 76, 0.25);
+}
+
+.keybind-chip {
+  display: inline-block;
+  padding: 0.12rem 0.35rem;
+  background: #1a120b;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+}
+
+.btn-reset-keybinds {
+  width: 100%;
+  margin-top: 0.75rem;
+}
+
 .btn-primary {
   width: 100%;
   margin-top: 1.25rem;
@@ -312,6 +405,12 @@ body.game-active {
   font-size: clamp(0.72rem, 1.8vw, 0.82rem);
   opacity: 0.72;
   color: #b8a08a;
+}
+
+.scores-pve {
+  color: #f5c96a;
+  font-weight: 600;
+  margin-right: 0.35rem;
 }
 
 .scores-bar {

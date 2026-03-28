@@ -9,7 +9,8 @@ const GAME_MODES = [
   {
     id: "pve",
     label: "Intruders (PvE)",
-    description: "Work together or solo: bots pathfind through the maze (A*) to flank you and shoot.",
+    description:
+      "Wave-based co-op vs bots (A* pathfinding). Clear the wave, short break, then the next. No friendly fire or self-hits from your shots.",
     available: true,
   },
   {
@@ -29,6 +30,10 @@ const GAME_MODES = [
 const STORAGE_NAME = "famhack_name";
 const STORAGE_MODE = "famhack_mode";
 const STORAGE_ROOM = "famhack_room";
+const STORAGE_LOCAL = "famhack_local_players";
+const STORAGE_KEYBINDS = "famhack_keybinds_v1";
+
+const BIND_ACTIONS = ["forward", "back", "left", "right", "fire"];
 
 const ROOM_CODE_LEN = 6;
 
@@ -47,13 +52,257 @@ const roomHud = document.getElementById("room-hud");
 const roomCodeDisplay = document.getElementById("room-code-display");
 const btnCopyCode = document.getElementById("btn-copy-code");
 const btnCopyLink = document.getElementById("btn-copy-link");
+const localPlayersSelect = document.getElementById("local-players-select");
+const gameHintEl = document.getElementById("game-hint");
+const keybindPanel = document.getElementById("keybind-panel");
+const btnResetKeybinds = document.getElementById("btn-reset-keybinds");
+
+/** 1–4 couch seats; each seat gets its own socket.id on the server. */
+let localPlayerCount = 1;
+/** @type {{ socket: any; slot: number }[]} */
+let connectionSlots = [];
+const localIds = new Set();
 
 let socket = null;
 let state = null;
-let myId = null;
 let gameActive = false;
 let selectedModeId = "arena";
 let currentRoomCode = null;
+let couchSlavesSpawned = false;
+
+const COUCH_BINDINGS = [
+  { forward: ["KeyW"], back: ["KeyS"], left: ["KeyA"], right: ["KeyD"], fire: ["Space"] },
+  { forward: ["ArrowUp"], back: ["ArrowDown"], left: ["ArrowLeft"], right: ["ArrowRight"], fire: ["Enter"] },
+  { forward: ["KeyI"], back: ["KeyK"], left: ["KeyJ"], right: ["KeyL"], fire: ["Slash"] },
+  {
+    forward: ["Numpad8"],
+    back: ["Numpad5"],
+    left: ["Numpad4"],
+    right: ["Numpad6"],
+    fire: ["Numpad0", "NumpadEnter"],
+  },
+];
+
+const SOLO_BINDING = {
+  forward: ["KeyW", "ArrowUp"],
+  back: ["KeyS", "ArrowDown"],
+  left: ["KeyA", "ArrowLeft"],
+  right: ["KeyD", "ArrowRight"],
+  fire: ["Space"],
+};
+
+const keybindCache = new Map();
+/** @type {{ seat: number; action: string; buttonEl: HTMLButtonElement } | null} */
+let keybindCapture = null;
+
+function cloneBinding(b) {
+  return {
+    forward: [...b.forward],
+    back: [...b.back],
+    left: [...b.left],
+    right: [...b.right],
+    fire: [...b.fire],
+  };
+}
+
+function computeDefaultBindingForSeatWithCount(seat, seatCount) {
+  if (seatCount === 1 && seat === 0) return cloneBinding(SOLO_BINDING);
+  return cloneBinding(COUCH_BINDINGS[seat] || COUCH_BINDINGS[0]);
+}
+
+function computeMergedBindingUncachedFor(slot, seatCount) {
+  const base = computeDefaultBindingForSeatWithCount(slot, seatCount);
+  const out = cloneBinding(base);
+  try {
+    const t = localStorage.getItem(STORAGE_KEYBINDS);
+    if (!t) return out;
+    const o = JSON.parse(t);
+    const raw = o[String(slot)];
+    if (!raw || typeof raw !== "object") return out;
+    for (const a of BIND_ACTIONS) {
+      if (Array.isArray(raw[a]) && raw[a].length) {
+        const c = raw[a].filter((x) => typeof x === "string");
+        if (c.length) out[a] = [...new Set(c)];
+      }
+    }
+  } catch {
+    return cloneBinding(base);
+  }
+  return out;
+}
+
+function invalidateKeybindCache() {
+  keybindCache.clear();
+}
+
+function bindingForSlotWithCount(slot, seatCount) {
+  const cacheKey = `${seatCount}|${slot}`;
+  if (keybindCache.has(cacheKey)) return keybindCache.get(cacheKey);
+  const m = computeMergedBindingUncachedFor(slot, seatCount);
+  keybindCache.set(cacheKey, m);
+  return m;
+}
+
+function bindingForSlot(slot) {
+  return bindingForSlotWithCount(slot, localPlayerCount);
+}
+
+function setBindingKey(seat, action, code, altAppend) {
+  invalidateKeybindCache();
+  const lc = readLocalPlayersFromUi();
+  const bindings = [];
+  for (let s = 0; s < 4; s++) {
+    bindings.push(computeMergedBindingUncachedFor(s, lc));
+  }
+  for (let s = 0; s < 4; s++) {
+    for (const a of BIND_ACTIONS) {
+      bindings[s][a] = bindings[s][a].filter((c) => c !== code);
+    }
+  }
+  if (altAppend && bindings[seat][action].length < 2) {
+    if (!bindings[seat][action].includes(code)) bindings[seat][action].push(code);
+  } else {
+    bindings[seat][action] = [code];
+  }
+  const store = {};
+  for (let s = 0; s < 4; s++) store[String(s)] = bindings[s];
+  localStorage.setItem(STORAGE_KEYBINDS, JSON.stringify(store));
+  invalidateKeybindCache();
+}
+
+function formatKeyCode(code) {
+  const map = {
+    Space: "Space",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Slash: "/",
+    Enter: "Enter",
+    Backquote: "`",
+  };
+  if (map[code]) return map[code];
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
+  if (code.startsWith("Numpad")) return code.replace("Numpad", "Num");
+  return code;
+}
+
+function renderKeybindPanel() {
+  if (!keybindPanel) return;
+  const n = readLocalPlayersFromUi();
+  keybindPanel.replaceChildren();
+  for (let seat = 0; seat < n; seat++) {
+    const wrap = document.createElement("div");
+    wrap.className = "keybind-seat";
+    const h = document.createElement("h4");
+    h.className = "keybind-seat-title";
+    h.textContent = n === 1 ? "Controls" : `Player ${seat + 1}`;
+    wrap.appendChild(h);
+    const b = bindingForSlotWithCount(seat, n);
+    for (const act of BIND_ACTIONS) {
+      const row = document.createElement("div");
+      row.className = "keybind-row";
+      const lab = document.createElement("label");
+      lab.textContent = act;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "keybind-bind";
+      for (const c of b[act]) {
+        const sp = document.createElement("span");
+        sp.className = "keybind-chip";
+        sp.textContent = formatKeyCode(c);
+        btn.appendChild(sp);
+      }
+      btn.addEventListener("click", () => {
+        if (keybindCapture?.buttonEl) keybindCapture.buttonEl.classList.remove("is-capturing");
+        keybindCapture = { seat, action: act, buttonEl: btn };
+        btn.classList.add("is-capturing");
+      });
+      row.appendChild(lab);
+      row.appendChild(btn);
+      wrap.appendChild(row);
+    }
+    keybindPanel.appendChild(wrap);
+  }
+}
+
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (!keybindCapture) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const { seat, action, buttonEl } = keybindCapture;
+    if (e.code === "Escape") {
+      buttonEl.classList.remove("is-capturing");
+      keybindCapture = null;
+      renderKeybindPanel();
+      return;
+    }
+    setBindingKey(seat, action, e.code, e.altKey);
+    buttonEl.classList.remove("is-capturing");
+    keybindCapture = null;
+    renderKeybindPanel();
+  },
+  true,
+);
+
+/** @type {{ forward: boolean; back: boolean; left: boolean; right: boolean; fire: boolean }[]} */
+let keysBySlot = [];
+
+function freshKeyState() {
+  return { forward: false, back: false, left: false, right: false, fire: false };
+}
+
+function initKeysSlots() {
+  keysBySlot = Array.from({ length: localPlayerCount }, () => freshKeyState());
+}
+
+function localPlayerNameForSlot(base, slotIndex) {
+  const max = 24;
+  if (slotIndex === 0) return base.slice(0, max);
+  const suf = ` (${slotIndex + 1})`;
+  return base.slice(0, Math.max(1, max - suf.length)) + suf;
+}
+
+function readLocalPlayersFromUi() {
+  const raw = Number(localPlayersSelect?.value ?? 1);
+  return Math.min(4, Math.max(1, Number.isFinite(raw) ? raw : 1));
+}
+
+function disconnectAll() {
+  for (const { socket: s } of connectionSlots) {
+    try {
+      s.removeAllListeners();
+      s.disconnect();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  connectionSlots = [];
+  socket = null;
+  localIds.clear();
+  couchSlavesSpawned = false;
+}
+
+function updateGameHint() {
+  if (!gameHintEl) return;
+  const n = localPlayerCount;
+  if (n <= 1) {
+    const b = bindingForSlot(0);
+    const mv = `Move ${b.forward.map(formatKeyCode).join("/")}, ${b.left.map(formatKeyCode).join("/")}/${b.right.map(formatKeyCode).join("/")}, ${b.back.map(formatKeyCode).join("/")}`;
+    const fi = b.fire.map(formatKeyCode).join("/");
+    gameHintEl.textContent = `${mv} · Fire: ${fi}`;
+    return;
+  }
+  const bits = [];
+  for (let s = 0; s < n; s++) {
+    const b = bindingForSlot(s);
+    bits.push(`P${s + 1} fire: ${b.fire.map(formatKeyCode).join("/")}`);
+  }
+  gameHintEl.textContent = bits.join(" · ") + " · open lobby to remap movement";
+}
 
 const SHOOT_SOUND_SRC = "assets/audio/shoot.mp3";
 const DEATH_SOUND_SRC = "assets/audio/death.mp3";
@@ -225,6 +474,26 @@ if (savedName) nameInput.value = savedName;
 
 buildModeOptions();
 
+if (localPlayersSelect) {
+  const savedLoc = localStorage.getItem(STORAGE_LOCAL);
+  if (savedLoc) {
+    const n = Number(savedLoc);
+    if (n >= 1 && n <= 4) localPlayersSelect.value = String(n);
+  }
+  localPlayersSelect.addEventListener("change", () => {
+    invalidateKeybindCache();
+    renderKeybindPanel();
+  });
+}
+
+btnResetKeybinds?.addEventListener("click", () => {
+  localStorage.removeItem(STORAGE_KEYBINDS);
+  invalidateKeybindCache();
+  renderKeybindPanel();
+});
+
+renderKeybindPanel();
+
 roomInput.addEventListener("input", () => {
   roomInput.value = normalizeRoomCode(roomInput.value);
 });
@@ -241,6 +510,9 @@ function buildInviteUrl() {
   const n = nameInput.value.trim();
   if (n) u.searchParams.set("name", n);
   u.searchParams.set("mode", selectedModeId);
+  const loc = readLocalPlayersFromUi();
+  if (loc > 1) u.searchParams.set("locals", String(loc));
+  else u.searchParams.delete("locals");
   return u.toString();
 }
 
@@ -273,80 +545,78 @@ btnCopyLink.addEventListener("click", async () => {
   }
 });
 
-const keys = {
-  forward: false,
-  back: false,
-  left: false,
-  right: false,
-  fire: false,
-};
-
-function setKey(code, down) {
-  switch (code) {
-    case "KeyW":
-    case "ArrowUp":
-      keys.forward = down;
-      break;
-    case "KeyS":
-    case "ArrowDown":
-      keys.back = down;
-      break;
-    case "KeyA":
-    case "ArrowLeft":
-      keys.left = down;
-      break;
-    case "KeyD":
-    case "ArrowRight":
-      keys.right = down;
-      break;
-    case "Space":
-      keys.fire = down;
-      break;
-    default:
-      return;
+function setKeyOnSlots(code, down) {
+  const n = localPlayerCount;
+  for (let slot = 0; slot < n; slot++) {
+    const b = bindingForSlot(slot);
+    if (b.forward.includes(code)) keysBySlot[slot].forward = down;
+    if (b.back.includes(code)) keysBySlot[slot].back = down;
+    if (b.left.includes(code)) keysBySlot[slot].left = down;
+    if (b.right.includes(code)) keysBySlot[slot].right = down;
+    if (b.fire.includes(code)) keysBySlot[slot].fire = down;
   }
+}
+
+function shouldPreventDefaultGameKey(code) {
+  const codes = new Set();
+  const n = localPlayerCount;
+  for (let s = 0; s < n; s++) {
+    const b = bindingForSlot(s);
+    for (const a of BIND_ACTIONS) {
+      for (const c of b[a]) codes.add(c);
+    }
+  }
+  return codes.has(code);
 }
 
 window.addEventListener("keydown", (e) => {
   unlockAudio();
   if (!gameActive) return;
-  if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
-    e.preventDefault();
-  }
-  setKey(e.code, true);
+  if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
+  setKeyOnSlots(e.code, true);
 });
 
 window.addEventListener("keyup", (e) => {
   if (!gameActive) return;
-  setKey(e.code, false);
+  if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
+  setKeyOnSlots(e.code, false);
 });
 
 window.addEventListener("pointerdown", unlockAudio, { passive: true });
 
 function emitInput() {
-  if (!gameActive || !socket?.connected) return;
-  socket.emit("input", { ...keys });
+  if (!gameActive) return;
+  for (let i = 0; i < connectionSlots.length; i++) {
+    const { socket: s, slot } = connectionSlots[i];
+    const ks = keysBySlot[slot];
+    if (!ks || !s?.connected) continue;
+    s.emit("input", { ...ks });
+  }
 }
 
 setInterval(emitInput, 1000 / 30);
 
 function enterGame() {
+  keybindCapture = null;
   screenLobby.classList.add("hidden");
   screenLobby.setAttribute("hidden", "");
   screenGame.classList.remove("hidden");
   screenGame.removeAttribute("hidden");
   document.body.classList.add("game-active");
   gameActive = true;
+  updateGameHint();
   tryStartMusic();
   queueMicrotask(() => state && draw());
 }
 
 function leaveGameUi() {
+  keybindCapture = null;
   gameActive = false;
   stopMusic();
   document.body.classList.remove("game-active");
   roomHud.classList.add("hidden");
   currentRoomCode = null;
+  disconnectAll();
   prevMyBulletIds = new Set();
   prevDeathEventCount = 0;
   screenGame.classList.add("hidden");
@@ -360,62 +630,144 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(canvasWrap);
 
+function onStateMessage(snap) {
+  const deathEvents = Number(snap?.deathEvents || 0);
+  if (deathEvents > prevDeathEventCount) {
+    for (let i = prevDeathEventCount; i < deathEvents; i++) {
+      playDeathSound();
+    }
+  }
+  prevDeathEventCount = deathEvents;
+
+  if (localIds.size > 0 && Array.isArray(snap?.bullets)) {
+    const myBulletIds = new Set();
+    for (const bullet of snap.bullets) {
+      if (localIds.has(bullet.ownerId)) myBulletIds.add(bullet.id);
+    }
+    for (const id of myBulletIds) {
+      if (!prevMyBulletIds.has(id)) playShootSound();
+    }
+    prevMyBulletIds = myBulletIds;
+  } else {
+    prevMyBulletIds = new Set();
+  }
+
+  state = snap;
+  renderScores(snap);
+  draw();
+}
+
+function onRoomJoinedFirstTime(code, name, mode) {
+  setRoomHud(code);
+  localStorage.setItem(STORAGE_ROOM, code);
+  const params = new URLSearchParams({ name, mode, room: code });
+  if (localPlayerCount > 1) params.set("locals", String(localPlayerCount));
+  history.replaceState(null, "", `${window.location.pathname}?${params}`);
+  enterGame();
+}
+
+function handleRoomError(data) {
+  showLobbyError(data?.message || "Could not join that room.");
+  disconnectAll();
+  btnPlay.disabled = false;
+}
+
+function handleConnectError(err) {
+  showLobbyError(err.message || "Could not connect.");
+  disconnectAll();
+  if (gameActive) leaveGameUi();
+  btnPlay.disabled = false;
+}
+
+function connectSingle(name, mode, roomQuery) {
+  disconnectAll();
+  localPlayerCount = 1;
+  initKeysSlots();
+  const s = io({ query: { name: localPlayerNameForSlot(name, 0), mode, room: roomQuery } });
+  socket = s;
+  connectionSlots = [{ socket: s, slot: 0 }];
+
+  s.on("connect", () => {
+    localIds.add(s.id);
+  });
+  s.on("room", ({ code }) => {
+    onRoomJoinedFirstTime(code, name, mode);
+  });
+  s.on("room_error", handleRoomError);
+  s.on("state", onStateMessage);
+  s.on("connect_error", handleConnectError);
+}
+
+function connectLocalHost(name, mode) {
+  disconnectAll();
+  initKeysSlots();
+  couchSlavesSpawned = false;
+
+  const primary = io({ query: { name: localPlayerNameForSlot(name, 0), mode, room: "new" } });
+  socket = primary;
+  connectionSlots = [{ socket: primary, slot: 0 }];
+
+  primary.on("connect", () => {
+    localIds.add(primary.id);
+  });
+  primary.on("room", ({ code }) => {
+    if (couchSlavesSpawned) return;
+    couchSlavesSpawned = true;
+    onRoomJoinedFirstTime(code, name, mode);
+    for (let i = 1; i < localPlayerCount; i++) {
+      const slave = io({ query: { name: localPlayerNameForSlot(name, i), mode, room: code } });
+      connectionSlots.push({ socket: slave, slot: i });
+      slave.on("connect", () => localIds.add(slave.id));
+      slave.on("room_error", handleRoomError);
+      slave.on("connect_error", handleConnectError);
+    }
+  });
+  primary.on("room_error", handleRoomError);
+  primary.on("state", onStateMessage);
+  primary.on("connect_error", handleConnectError);
+}
+
+function connectLocalJoin(name, mode, roomCode) {
+  disconnectAll();
+  initKeysSlots();
+  let seenRoom = false;
+
+  for (let i = 0; i < localPlayerCount; i++) {
+    const s = io({ query: { name: localPlayerNameForSlot(name, i), mode, room: roomCode } });
+    connectionSlots.push({ socket: s, slot: i });
+    if (i === 0) socket = s;
+
+    s.on("connect", () => {
+      localIds.add(s.id);
+    });
+    s.on("room", ({ code }) => {
+      if (!seenRoom) {
+        seenRoom = true;
+        onRoomJoinedFirstTime(code, name, mode);
+      }
+    });
+    s.on("room_error", handleRoomError);
+    s.on("connect_error", handleConnectError);
+    if (i === 0) {
+      s.on("state", onStateMessage);
+    }
+  }
+}
+
 function connect(name, mode, roomQuery) {
-  socket?.disconnect();
-  socket = io({ query: { name, mode, room: roomQuery } });
+  localPlayerCount = readLocalPlayersFromUi();
+  localStorage.setItem(STORAGE_LOCAL, String(localPlayerCount));
 
-  socket.on("connect", () => {
-    myId = socket.id;
-  });
+  if (localPlayerCount === 1) {
+    connectSingle(name, mode, roomQuery);
+    return;
+  }
 
-  socket.on("room", ({ code }) => {
-    setRoomHud(code);
-    localStorage.setItem(STORAGE_ROOM, code);
-    const params = new URLSearchParams({ name, mode: selectedModeId, room: code });
-    history.replaceState(null, "", `${window.location.pathname}?${params}`);
-    enterGame();
-  });
-
-  socket.on("room_error", (data) => {
-    showLobbyError(data?.message || "Could not join that room.");
-    socket?.disconnect();
-    socket = null;
-    btnPlay.disabled = false;
-  });
-
-  socket.on("state", (snap) => {
-    const deathEvents = Number(snap?.deathEvents || 0);
-    if (deathEvents > prevDeathEventCount) {
-      for (let i = prevDeathEventCount; i < deathEvents; i++) {
-        playDeathSound();
-      }
-    }
-    prevDeathEventCount = deathEvents;
-
-    if (myId && Array.isArray(snap?.bullets)) {
-      const myBulletIds = new Set();
-      for (const bullet of snap.bullets) {
-        if (bullet.ownerId === myId) myBulletIds.add(bullet.id);
-      }
-      for (const id of myBulletIds) {
-        if (!prevMyBulletIds.has(id)) playShootSound();
-      }
-      prevMyBulletIds = myBulletIds;
-    } else {
-      prevMyBulletIds = new Set();
-    }
-
-    state = snap;
-    renderScores(snap);
-    draw();
-  });
-
-  socket.on("connect_error", (err) => {
-    socket = null;
-    showLobbyError(err.message || "Could not connect.");
-    if (gameActive) leaveGameUi();
-    btnPlay.disabled = false;
-  });
+  if (roomQuery !== "new" && String(roomQuery).length === ROOM_CODE_LEN) {
+    connectLocalJoin(name, mode, roomQuery);
+  } else {
+    connectLocalHost(name, mode);
+  }
 }
 
 function startFromLobby() {
@@ -477,6 +829,11 @@ if (quickModeDef) {
     }
   });
 }
+const quickLocals = params.get("locals");
+if (quickLocals && localPlayersSelect) {
+  const nl = Number(quickLocals);
+  if (nl >= 1 && nl <= 4) localPlayersSelect.value = String(nl);
+}
 if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
@@ -500,12 +857,25 @@ function renderScores(snap) {
     scoresEl.textContent = "";
     return;
   }
-  scoresEl.innerHTML = snap.players
-    .map((p) => {
-      const tag = p.id === myId ? " (you)" : "";
-      return `<span>${escapeHtml(p.name)}: ${p.score}${tag}</span>`;
-    })
-    .join("");
+  let pveBanner = "";
+  if (snap.mode === "pve") {
+    const w = snap.pveWave ?? 1;
+    let line = `Wave ${w}`;
+    const end = Number(snap.pveIntermissionEnd || 0);
+    if (end > Date.now()) {
+      const sec = Math.max(1, Math.ceil((end - Date.now()) / 1000));
+      line += ` — next in ${sec}s`;
+    }
+    pveBanner = `<span class="scores-pve">${escapeHtml(line)}</span> `;
+  }
+  scoresEl.innerHTML =
+    pveBanner +
+    snap.players
+      .map((p) => {
+        const tag = localIds.has(p.id) ? " (you)" : "";
+        return `<span>${escapeHtml(p.name)}: ${p.score}${tag}</span>`;
+      })
+      .join("");
 }
 
 const COLORS = ["#58a6ff", "#f85149", "#d2a8ff", "#79c0ff", "#ffa657", "#7ee787"];
@@ -830,7 +1200,7 @@ function draw() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    drawTankSprite(ctx, col, p.id === myId);
+    drawTankSprite(ctx, col, localIds.has(p.id));
     ctx.restore();
 
     const nameY = p.y - 26;
