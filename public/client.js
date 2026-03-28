@@ -13,18 +13,7 @@ const GAME_MODES = [
       "Wave-based co-op vs bots (A* pathfinding). Clear the wave, short break, then the next. No friendly fire or self-hits from your shots.",
     available: true,
   },
-  {
-    id: "teams",
-    label: "Family Teams",
-    description: "Pick sides in the family dispute. Friendly fire off.",
-    available: false,
-  },
-  {
-    id: "survival",
-    label: "Home Invasion",
-    description: "Survive waves of intruders in your family home.",
-    available: false,
-  },
+
 ];
 
 const STORAGE_NAME = "famhack_name";
@@ -838,10 +827,10 @@ if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
 } else {
-  const savedRoom = localStorage.getItem(STORAGE_ROOM);
-  if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
-    roomInput.value = normalizeRoomCode(savedRoom);
-  }
+  // const savedRoom = localStorage.getItem(STORAGE_ROOM);
+  // if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
+  //   roomInput.value = normalizeRoomCode(savedRoom);
+  // }
 }
 const quickRoomNorm = quickRoomRaw ? normalizeRoomCode(quickRoomRaw) : "";
 const roomOkForAutoplay =
