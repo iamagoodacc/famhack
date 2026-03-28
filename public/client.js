@@ -7,6 +7,12 @@ const GAME_MODES = [
     available: true,
   },
   {
+    id: "pve",
+    label: "Intruders (PvE)",
+    description: "Work together or solo: bots pathfind through the maze (A*) to flank you and shoot.",
+    available: true,
+  },
+  {
     id: "teams",
     label: "Family Teams",
     description: "Pick sides in the family dispute. Friendly fire off.",
@@ -784,6 +790,27 @@ function draw() {
     ctx.beginPath();
     ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  const enemies = state.enemies ?? [];
+  const ENEMY_HULL = "#b33a3a";
+
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.rotate(e.angle);
+    drawTankSprite(ctx, ENEMY_HULL, false);
+    ctx.restore();
+
+    const nameY = e.y - 20;
+    ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.strokeText(e.name, e.x, nameY);
+    ctx.fillStyle = "#f0b4b4";
+    ctx.fillText(e.name, e.x, nameY);
   }
 
   for (const p of players) {
