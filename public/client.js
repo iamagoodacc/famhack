@@ -398,6 +398,89 @@ function colorForId(id) {
   return COLORS[h % COLORS.length];
 }
 
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  ctx.lineTo(x + rr, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+  ctx.lineTo(x, y + rr);
+  ctx.quadraticCurveTo(x, y, x + rr, y);
+}
+
+/**
+ * Hull 16×12 fits inside server hitbox circle (r=10). Treads sit outside for look only.
+ * Flat fills. Barrel ends ~16px — near bullet spawn (TANK_R + BULLET_R + 2).
+ */
+function drawTankSprite(ctx, hullColor, isLocal) {
+  const hullW = 16;
+  const hullH = 12;
+  const treadW = 2.5;
+  const lx = -hullW / 2;
+  const ly = -hullH / 2;
+  const treadFill = "#1a1f26";
+  const treadLine = "#30363d";
+
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(0, 6, 8.5, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = treadFill;
+  ctx.fillRect(lx - treadW, ly + 0.5, treadW, hullH - 1);
+  ctx.fillRect(lx + hullW, ly + 0.5, treadW, hullH - 1);
+  ctx.strokeStyle = treadLine;
+  ctx.lineWidth = 1;
+  for (let ty = ly + 2; ty < ly + hullH - 1; ty += 3) {
+    ctx.beginPath();
+    ctx.moveTo(lx - treadW + 0.5, ty);
+    ctx.lineTo(lx - 0.5, ty);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lx + hullW + 0.5, ty);
+    ctx.lineTo(lx + hullW + treadW - 0.5, ty);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  roundRectPath(ctx, lx, ly, hullW, hullH, 2);
+  ctx.fillStyle = hullColor;
+  ctx.fill();
+  ctx.strokeStyle = isLocal ? "#dce3ee" : "rgba(255,255,255,0.5)";
+  ctx.lineWidth = isLocal ? 1.85 : 1.2;
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(0,0,0,0.16)";
+  ctx.fillRect(lx + 2, ly + 1.5, hullW - 4, 2.5);
+
+  const turretFill = shadeColor(hullColor, -24);
+  ctx.fillStyle = turretFill;
+  ctx.beginPath();
+  ctx.arc(0, ly + 3.8, 3.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.arc(0, ly + 3.8, 1.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  const by = -2;
+  ctx.fillStyle = "#2d333b";
+  ctx.fillRect(3.5, by - 0.8, 4, 5);
+  ctx.fillStyle = "#252a31";
+  ctx.fillRect(6.5, by - 1, 9.5, 5.2);
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(15.5, by - 0.6, 2.5, 4.4);
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillRect(17.5, by - 0.15, 1, 3.5);
+}
+
 function draw() {
   if (!state || !canvasWrap) return;
 
@@ -415,7 +498,10 @@ function draw() {
   const { arena, walls, players, bullets } = state;
   const aw = arena.w;
   const ah = arena.h;
-  const scale = Math.min(cw / aw, ch / ah);
+  /** Slightly past “fit” so the arena fills the view and feels less distant (edges may clip). */
+  const VIEW_ZOOM = 1.12;
+  const base = Math.min(cw / aw, ch / ah);
+  const scale = base * VIEW_ZOOM;
   const ox = (cw - aw * scale) / 2;
   const oy = (ch - ah * scale) / 2;
 
@@ -424,6 +510,9 @@ function draw() {
   ctx.fillRect(0, 0, cw, ch);
 
   ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, cw, ch);
+  ctx.clip();
   ctx.translate(ox, oy);
   ctx.scale(scale, scale);
 
@@ -451,20 +540,11 @@ function draw() {
   }
 
   for (const wall of walls) {
-    const g = ctx.createLinearGradient(wall.x, wall.y, wall.x, wall.y + wall.h);
-    g.addColorStop(0, "#6e7681");
-    g.addColorStop(0.45, "#3d444d");
-    g.addColorStop(1, "#24292f");
-    ctx.fillStyle = g;
+    ctx.fillStyle = "#3d4450";
     ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+    ctx.strokeStyle = "#252a32";
     ctx.lineWidth = 1;
     ctx.strokeRect(wall.x + 0.5, wall.y + 0.5, wall.w - 1, wall.h - 1);
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
-    ctx.beginPath();
-    ctx.moveTo(wall.x + 1, wall.y + wall.h - 0.5);
-    ctx.lineTo(wall.x + wall.w - 1, wall.y + wall.h - 0.5);
-    ctx.stroke();
   }
 
   const vignette = ctx.createRadialGradient(aw * 0.5, ah * 0.5, Math.min(aw, ah) * 0.25, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.65);
@@ -494,40 +574,11 @@ function draw() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
-    ctx.beginPath();
-    ctx.ellipse(0, 6, 18, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    const tw = 32;
-    const th = 24;
-    const rr = 4;
-    const lx = -tw / 2;
-    const ly = -th / 2;
-    const bodyGrad = ctx.createLinearGradient(lx, ly, lx + tw, ly + th);
-    bodyGrad.addColorStop(0, col);
-    bodyGrad.addColorStop(1, shadeColor(col, -35));
-    ctx.fillStyle = bodyGrad;
-    ctx.strokeStyle = p.id === myId ? "#e6edf3" : "rgba(255,255,255,0.85)";
-    ctx.lineWidth = p.id === myId ? 2.5 : 1.75;
-    ctx.beginPath();
-    ctx.moveTo(lx + rr, ly);
-    ctx.lineTo(lx + tw - rr, ly);
-    ctx.quadraticCurveTo(lx + tw, ly, lx + tw, ly + rr);
-    ctx.lineTo(lx + tw, ly + th - rr);
-    ctx.quadraticCurveTo(lx + tw, ly + th, lx + tw - rr, ly + th);
-    ctx.lineTo(lx + rr, ly + th);
-    ctx.quadraticCurveTo(lx, ly + th, lx, ly + th - rr);
-    ctx.lineTo(lx, ly + rr);
-    ctx.quadraticCurveTo(lx, ly, lx + rr, ly);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#f0f3f6";
-    ctx.fillRect(10, -4, 10, 8);
+    drawTankSprite(ctx, col, p.id === myId);
     ctx.restore();
 
-    const nameY = p.y - 24;
-    ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
+    const nameY = p.y - 20;
+    ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
     ctx.strokeStyle = "rgba(0,0,0,0.65)";
