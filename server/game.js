@@ -507,6 +507,8 @@ export class GameRoom {
   _spawnEnemyUnit() {
     const slot = this._nextEnemySlot++;
     const sp = randomSpawn(this._rng, this.walls);
+    const weaponType = randomWeaponType(this._rng);
+    const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
     this.enemies.push({
       id: `enemy-${slot}`,
       name: `Intruder ${this.enemies.length + 1}`,
@@ -518,7 +520,8 @@ export class GameRoom {
       alive: true,
       hp: ENEMY_MAX_HP,
       maxHp: ENEMY_MAX_HP,
-      weaponType: "minigun",
+      weaponType,
+      weaponName: prof.name,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
       _lastPath: null,
@@ -748,6 +751,15 @@ export class GameRoom {
   _applySplashDamage(ownerId, cx, cy, radius, damage, now) {
     if (!radius || !damage) return;
     const killer = this.players.get(ownerId);
+
+    // Strong center hit with fast drop-off toward the edge.
+    const scaledDamageAt = (d) => {
+      if (d >= radius) return 0;
+      const t = 1 - d / radius;
+      const amount = damage * t * t * t;
+      return amount < 1 ? 0 : amount;
+    };
+
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       if (this.mode === "pve" && this.players.has(ownerId)) continue;
@@ -762,9 +774,26 @@ export class GameRoom {
       }
       const d = Math.hypot(p.x - cx, p.y - cy);
       if (d > radius) continue;
-      p.hp -= damage;
+      const dealt = scaledDamageAt(d);
+      if (dealt <= 0) continue;
+      p.hp -= dealt;
       if (p.hp <= 0) {
         this._onPlayerHpDepleted(p, killer, now);
+      }
+    }
+
+    if (this.mode === "pve") {
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        const d = Math.hypot(e.x - cx, e.y - cy);
+        if (d > radius) continue;
+        const dealt = scaledDamageAt(d);
+        if (dealt <= 0) continue;
+        e.hp -= dealt;
+        if (e.hp <= 0) {
+          if (killer) killer.score += 1;
+          e.alive = false;
+        }
       }
     }
   }
@@ -1019,6 +1048,8 @@ export class GameRoom {
         alive: e.alive,
         hp: e.hp,
         maxHp: e.maxHp,
+        weaponType: e.weaponType || "minigun",
+        weaponName: (WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).name,
       }));
     }
     return snap;

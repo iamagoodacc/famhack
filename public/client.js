@@ -347,6 +347,124 @@ let deathSoundIndex = 0;
 let prevMyBulletIds = new Set();
 let prevDeathEventCount = 0;
 let audioUnlocked = false;
+let prevBulletsById = new Map();
+let prevEnemiesById = new Map();
+const fxParticles = [];
+
+function pointRectDistance(px, py, r) {
+  const nx = Math.max(r.x, Math.min(px, r.x + r.w));
+  const ny = Math.max(r.y, Math.min(py, r.y + r.h));
+  return Math.hypot(px - nx, py - ny);
+}
+
+function nearWall(x, y, walls, pad = 10) {
+  if (!Array.isArray(walls)) return false;
+  for (const w of walls) {
+    if (pointRectDistance(x, y, w) <= pad) return true;
+  }
+  return false;
+}
+
+function pushParticle(p) {
+  fxParticles.push(p);
+  if (fxParticles.length > 360) fxParticles.splice(0, fxParticles.length - 360);
+}
+
+function spawnImpactParticles(x, y, vx, vy, weaponType) {
+  const wt = weaponType || "minigun";
+  const n = wt === "rocket" ? 12 : wt === "shotgun" ? 8 : wt === "sniper" ? 7 : 6;
+  const base = Math.hypot(vx || 0, vy || 0) || 1;
+  const ux = (vx || 0) / base;
+  const uy = (vy || 0) / base;
+  for (let i = 0; i < n; i++) {
+    const spread = (Math.random() * 2 - 1) * Math.PI * 0.55;
+    const dir = Math.atan2(uy, ux) + Math.PI + spread;
+    const speed = 0.9 + Math.random() * 2.2;
+    const col =
+      wt === "rocket"
+        ? "rgba(255,180,110,0.95)"
+        : wt === "sniper"
+          ? "rgba(180,225,255,0.9)"
+          : "rgba(230,220,205,0.88)";
+    pushParticle({
+      x,
+      y,
+      vx: Math.cos(dir) * speed,
+      vy: Math.sin(dir) * speed,
+      life: 12 + Math.floor(Math.random() * 8),
+      maxLife: 20,
+      size: 1.2 + Math.random() * 2.2,
+      color: col,
+      drag: 0.9,
+      gravity: 0.015,
+    });
+  }
+}
+
+function spawnEnemyDeathParticles(x, y) {
+  const n = 22;
+  for (let i = 0; i < n; i++) {
+    const dir = Math.random() * Math.PI * 2;
+    const speed = 0.8 + Math.random() * 2.8;
+    pushParticle({
+      x: x + (Math.random() * 2 - 1) * 4,
+      y: y + (Math.random() * 2 - 1) * 4,
+      vx: Math.cos(dir) * speed,
+      vy: Math.sin(dir) * speed,
+      life: 18 + Math.floor(Math.random() * 12),
+      maxLife: 30,
+      size: 1.4 + Math.random() * 2.6,
+      color: Math.random() < 0.7 ? "rgba(255,130,120,0.9)" : "rgba(255,220,170,0.86)",
+      drag: 0.92,
+      gravity: 0.02,
+    });
+  }
+}
+
+function tickAndDrawParticles(ctx) {
+  for (let i = fxParticles.length - 1; i >= 0; i--) {
+    const p = fxParticles[i];
+    p.life -= 1;
+    if (p.life <= 0) {
+      fxParticles.splice(i, 1);
+      continue;
+    }
+    p.vx *= p.drag || 0.92;
+    p.vy = p.vy * (p.drag || 0.92) + (p.gravity || 0);
+    p.x += p.vx;
+    p.y += p.vy;
+    const a = Math.max(0, Math.min(1, p.life / (p.maxLife || 1)));
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color || "rgba(255,255,255,0.8)";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size || 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawExplosionFx(ctx, ex) {
+  const life = Math.max(0, Number(ex.life) || 0);
+  const maxLife = Math.max(1, Number(ex.maxLife) || 1);
+  const t = life / maxLife;
+  const r = Number(ex.r) || 24;
+  const coreR = r * (0.18 + (1 - t) * 0.65);
+  const ringR = r * (0.5 + (1 - t) * 0.65);
+
+  const g = ctx.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, ringR);
+  g.addColorStop(0, `rgba(255,235,170,${0.38 * t + 0.15})`);
+  g.addColorStop(0.45, `rgba(255,132,72,${0.48 * t + 0.18})`);
+  g.addColorStop(1, "rgba(120,30,0,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(ex.x, ex.y, ringR, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = `rgba(255,244,218,${0.52 * t + 0.16})`;
+  ctx.beginPath();
+  ctx.arc(ex.x, ex.y, coreR, 0, Math.PI * 2);
+  ctx.fill();
+}
 
 function playFromPool(pool, index) {
   const audio = pool[index];
@@ -670,6 +788,9 @@ function leaveGameUi() {
   disconnectAll();
   prevMyBulletIds = new Set();
   prevDeathEventCount = 0;
+  prevBulletsById = new Map();
+  prevEnemiesById = new Map();
+  fxParticles.length = 0;
   screenGame.classList.add("hidden");
   screenGame.setAttribute("hidden", "");
   screenLobby.classList.remove("hidden");
@@ -689,6 +810,34 @@ function estimatedServerClock() {
 }
 
 function onStateMessage(snap) {
+  if (prevBulletsById.size > 0) {
+    const current = new Map();
+    if (Array.isArray(snap?.bullets)) {
+      for (const b of snap.bullets) current.set(b.id, b);
+    }
+    for (const [id, oldB] of prevBulletsById.entries()) {
+      if (current.has(id)) continue;
+      if (nearWall(oldB.x, oldB.y, snap?.walls, (oldB.radius || 3.5) + 9)) {
+        spawnImpactParticles(oldB.x, oldB.y, oldB.vx || 0, oldB.vy || 0, oldB.weaponType);
+      }
+    }
+  }
+
+  if (prevEnemiesById.size > 0) {
+    const currentEnemies = new Map();
+    for (const e of snap?.enemies || []) currentEnemies.set(e.id, e);
+    for (const [id, prevE] of prevEnemiesById.entries()) {
+      const cur = currentEnemies.get(id);
+      if (cur) {
+        if (prevE.alive && cur.alive === false) {
+          spawnEnemyDeathParticles(cur.x, cur.y);
+        }
+      } else if (prevE.alive) {
+        spawnEnemyDeathParticles(prevE.x, prevE.y);
+      }
+    }
+  }
+
   const deathEvents = Number(snap?.deathEvents || 0);
   if (deathEvents > prevDeathEventCount) {
     for (let i = prevDeathEventCount; i < deathEvents; i++) {
@@ -712,6 +861,12 @@ function onStateMessage(snap) {
 
   lastStateReceiveMs = Date.now();
   lastServerNow = Number(snap.serverNow) || lastStateReceiveMs;
+
+  prevBulletsById = new Map();
+  for (const b of snap?.bullets || []) prevBulletsById.set(b.id, b);
+  prevEnemiesById = new Map();
+  for (const e of snap?.enemies || []) prevEnemiesById.set(e.id, e);
+
   state = snap;
   renderLeaderboard(snap);
   draw();
@@ -897,11 +1052,6 @@ if (quickLocals && localPlayersSelect) {
 if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
-} else {
-  const savedRoom = localStorage.getItem(STORAGE_ROOM);
-  if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
-    roomInput.value = normalizeRoomCode(savedRoom);
-  }
 }
 const quickRoomNorm = quickRoomRaw ? normalizeRoomCode(quickRoomRaw) : "";
 const roomOkForAutoplay =
@@ -934,6 +1084,21 @@ function hpBarClass(ratio) {
   if (ratio > 0.45) return "hb-ok";
   if (ratio > 0.2) return "hb-mid";
   return "hb-low";
+}
+
+function weaponLabelColor(weaponType) {
+  switch (weaponType) {
+    case "shotgun":
+      return "#f4b25f";
+    case "rocket":
+      return "#ff6b5f";
+    case "sniper":
+      return "#74c9ff";
+    case "minigun":
+      return "#8ee66b";
+    default:
+      return "#d0d7de";
+  }
 }
 
 function renderLeaderboard(snap) {
@@ -975,9 +1140,12 @@ function renderLeaderboard(snap) {
       const spin = reloadSpinHtml(clock, p.lastFiredAt, p.weaponCooldownMs);
       const st = statusForLeaderboard(snap, p, clock);
       const stCell = st ? `<span class="lb-st">${escapeHtml(st)}</span>` : "—";
+      const weapon = p.weaponName
+        ? `<span class="lb-weapon" style="color:${weaponLabelColor(p.weaponType)}">${escapeHtml(p.weaponName)}</span>`
+        : "";
       return `<tr class="${youCls}">
   <td class="lb-rank">${rank}</td>
-  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}</td>
+  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}${weapon}</td>
   <td class="lb-score">${p.score ?? 0}</td>
   <td class="lb-hp"><div class="lb-hp-bar ${hpBarClass(ratio)}" style="width:${pct}%"></div></td>
   <td class="lb-status">${stCell}</td>
@@ -1065,11 +1233,163 @@ function drawReloadSpinner(ctx, cx, nameY, name, now, lastFiredAt, weaponCooldow
   ctx.restore();
 }
 
+function drawWeaponModel(ctx, weaponType, S) {
+  const wt = weaponType || "minigun";
+
+  if (wt === "shotgun") {
+    ctx.fillStyle = "#8f5b2e";
+    ctx.fillRect(9 * S, -2.6 * S, 8 * S, 3.6 * S);
+    ctx.fillStyle = "#2f2f2f";
+    ctx.fillRect(16 * S, -1.9 * S, 10 * S, 2.2 * S);
+    ctx.fillStyle = "#d7c39b";
+    ctx.fillRect(24.5 * S, -1.45 * S, 2.2 * S, 1.3 * S);
+    ctx.fillStyle = "#3d2a14";
+    ctx.fillRect(10 * S, -3.4 * S, 2.2 * S, 1.2 * S);
+    return;
+  }
+
+  if (wt === "rocket") {
+    ctx.fillStyle = "#515a66";
+    ctx.fillRect(8.5 * S, -3.2 * S, 12.5 * S, 5.2 * S);
+    ctx.fillStyle = "#262c33";
+    ctx.fillRect(20 * S, -2.2 * S, 8.2 * S, 3.2 * S);
+    ctx.fillStyle = "#ff5a49";
+    ctx.beginPath();
+    ctx.moveTo(28.2 * S, -2.2 * S);
+    ctx.lineTo(30.6 * S, -0.6 * S);
+    ctx.lineTo(28.2 * S, 1 * S);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#9aa4b4";
+    ctx.fillRect(9.5 * S, -0.5 * S, 2.2 * S, 1.2 * S);
+    return;
+  }
+
+  if (wt === "sniper") {
+    ctx.fillStyle = "#2d557d";
+    ctx.fillRect(9 * S, -2.3 * S, 18 * S, 3 * S);
+    ctx.fillStyle = "#17324d";
+    ctx.fillRect(15 * S, -4 * S, 7.5 * S, 1.6 * S);
+    ctx.fillStyle = "#b9dcff";
+    ctx.fillRect(26.8 * S, -1.65 * S, 3.2 * S, 1.7 * S);
+    ctx.fillStyle = "#7ec8ff";
+    ctx.fillRect(17.4 * S, -3.6 * S, 1.8 * S, 0.8 * S);
+    return;
+  }
+
+  // Minigun (default)
+  ctx.fillStyle = "#3f434a";
+  ctx.fillRect(9.5 * S, -3.2 * S, 10 * S, 5 * S);
+  ctx.fillStyle = "#9aa1ab";
+  for (let i = 0; i < 4; i++) {
+    ctx.fillRect((18 + i * 2.1) * S, (-2.2 + i * 0.1) * S, 3.5 * S, 0.95 * S);
+    ctx.fillRect((18 + i * 2.1) * S, (-0.6 + i * 0.1) * S, 3.5 * S, 0.95 * S);
+  }
+}
+
+function drawBulletSprite(ctx, b) {
+  const wt = b.weaponType || "minigun";
+  const r = Math.max(2, Number(b.radius) || 3.5);
+  const vx = Number(b.vx) || 0;
+  const vy = Number(b.vy) || 0;
+  const speed = Math.hypot(vx, vy) || 1;
+  const ux = vx / speed;
+  const uy = vy / speed;
+
+  const drawTrail = (len, width, alpha) => {
+    if (speed < 0.01) return;
+    const tx = b.x - ux * len;
+    const ty = b.y - uy * len;
+    const g = ctx.createLinearGradient(b.x, b.y, tx, ty);
+    g.addColorStop(0, `rgba(255,255,255,${alpha})`);
+    g.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.strokeStyle = g;
+    ctx.lineWidth = width;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+  };
+
+  if (wt === "shotgun") {
+    drawTrail(Math.max(7, r * 3.2), Math.max(1.1, r * 0.85), 0.18);
+    ctx.fillStyle = "#ffd387";
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, r * 1.2, r * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(146,89,33,0.8)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    return;
+  }
+
+  if (wt === "rocket") {
+    drawTrail(Math.max(10, r * 5), Math.max(1.5, r * 1), 0.2);
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = "rgba(255,92,64,0.26)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 1.8, 0, r * 1.6, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#7b838d";
+    ctx.fillRect(-r * 1.6, -r * 0.9, r * 2.6, r * 1.8);
+    ctx.fillStyle = "#ff5a49";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.1, 0);
+    ctx.lineTo(r * 2, -r * 0.65);
+    ctx.lineTo(r * 2, r * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 212, 120, 0.58)";
+    ctx.beginPath();
+    ctx.arc(-r * 1.6, 0, Math.max(1.2, r * 0.75), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (wt === "sniper") {
+    drawTrail(Math.max(12, r * 5), Math.max(1.25, r * 0.95), 0.2);
+    const ang = Math.atan2(vy || 0, vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const lg = ctx.createLinearGradient(-r * 2.6, 0, r * 2.6, 0);
+    lg.addColorStop(0, "#7ebeff");
+    lg.addColorStop(1, "#f3fcff");
+    ctx.fillStyle = lg;
+    ctx.fillRect(-r * 2.4, -r * 0.55, r * 4.8, r * 1.1);
+    ctx.fillStyle = "rgba(220,244,255,0.82)";
+    ctx.fillRect(-r * 1.6, -r * 0.22, r * 3.2, r * 0.44);
+    ctx.restore();
+
+    ctx.fillStyle = "#effbff";
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, Math.max(1, r * 0.65), 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  // Minigun default: compact grey tracer with a slight trail.
+  drawTrail(Math.max(8, r * 3.8), Math.max(1, r * 0.8), 0.16);
+  ctx.fillStyle = "#9ea6af";
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#e7edf5";
+  ctx.beginPath();
+  ctx.arc(b.x - r * 0.25, b.y - r * 0.25, Math.max(1, r * 0.45), 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /**
  * Top-down person with a gun (~1.4x bigger, more detail).
  * Facing right (angle=0).
  */
-function drawTankSprite(ctx, hullColor, isLocal) {
+function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   const S = 1.4; // scale factor
 
   // Shadow on ground
@@ -1149,24 +1469,8 @@ function drawTankSprite(ctx, hullColor, isLocal) {
   ctx.ellipse(8.5 * S, 4.2 * S, 1.8 * S, 2 * S, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Gun body
-  ctx.fillStyle = "#3a3a3a";
-  ctx.fillRect(10 * S, -3 * S, 13 * S, 4.2 * S);
-  // Barrel
-  ctx.fillStyle = "#2a2a2a";
-  ctx.fillRect(21 * S, -2.4 * S, 4.5 * S, 3 * S);
-  // Grip
-  ctx.fillStyle = "#4a3a2a";
-  ctx.fillRect(10 * S, -3 * S, 2.5 * S, 4.2 * S);
-  // Trigger guard
-  ctx.strokeStyle = "#555";
-  ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.arc(13 * S, 0.8 * S, 1.2 * S, 0, Math.PI);
-  ctx.stroke();
-  // Muzzle
-  ctx.fillStyle = "#666";
-  ctx.fillRect(25 * S, -1.6 * S, 1.5 * S, 1.5 * S);
+  // Weapon model differs per weapon type.
+  drawWeaponModel(ctx, weaponType, S);
 
   // Head
   const skinTone = "#e0b896";
@@ -1323,22 +1627,15 @@ function draw() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
-  for (const b of bullets) {
-    // Small solid bullet
-    ctx.fillStyle = "#c8a050";
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffe8b0";
-    ctx.beginPath();
-    ctx.arc(b.x - 0.8, b.y - 0.8, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(100,70,30,0.5)";
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.stroke();
+  for (const ex of state.explosions || []) {
+    drawExplosionFx(ctx, ex);
   }
+
+  for (const b of bullets) {
+    drawBulletSprite(ctx, b);
+  }
+
+  tickAndDrawParticles(ctx);
 
   const enemies = state.enemies ?? [];
   const ENEMY_HULL = "#b33a3a";
@@ -1348,7 +1645,7 @@ function draw() {
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.rotate(e.angle);
-    drawTankSprite(ctx, ENEMY_HULL, false);
+    drawTankSprite(ctx, ENEMY_HULL, false, e.weaponType || "minigun");
     ctx.restore();
 
     const nameY = e.y - 20;
@@ -1389,7 +1686,7 @@ function draw() {
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle);
       ctx.globalAlpha = 0.36;
-      drawTankSprite(ctx, col, localIds.has(p.id));
+      drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
       ctx.restore();
       ctx.globalAlpha = 1;
       const nameY = p.y - 26;
@@ -1406,7 +1703,7 @@ function draw() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    drawTankSprite(ctx, col, localIds.has(p.id));
+    drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
     ctx.restore();
 
     const nameY = p.y - 26;
