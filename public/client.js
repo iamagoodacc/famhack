@@ -321,25 +321,44 @@ function updateGameHint() {
 }
 
 const SHOOT_SOUND_SRC = "assets/audio/shoot.mp3";
+const LIGHT_SHOT_SOUND_SRC = "assets/audio/lightshot.mp3";
+const HEAVY_SHOT_SOUND_SRC = "assets/audio/heavyshot.mp3";
+const SHOTGUN_SOUND_SRC = "assets/audio/shotgun.mp3";
+const SNIPER_SOUND_SRC = "assets/audio/sniper.mp3";
+const ROCKET_SOUND_SRC = "assets/audio/rocket.mp3";
+const FLAMETHROWER_SOUND_SRC = "assets/audio/flamethrower.mp3";
+const RELOAD_SOUND_SRC = "assets/audio/gunreload.mp3";
 const DEATH_SOUND_SRC = "assets/audio/death.mp3";
 const MUSIC_SRC = "assets/audio/music.mp3";
 
 const SHOOT_SOUND_POOL_SIZE = 6;
+const LIGHT_SOUND_POOL_SIZE = 6;
+const HEAVY_SOUND_POOL_SIZE = 5;
+const SHOTGUN_SOUND_POOL_SIZE = 4;
+const SNIPER_SOUND_POOL_SIZE = 4;
+const ROCKET_SOUND_POOL_SIZE = 4;
+const FLAME_SOUND_POOL_SIZE = 5;
+const RELOAD_SOUND_POOL_SIZE = 4;
 const DEATH_SOUND_POOL_SIZE = 4;
 
-const shootSoundPool = Array.from({ length: SHOOT_SOUND_POOL_SIZE }, () => {
-  const audio = new Audio(SHOOT_SOUND_SRC);
-  audio.preload = "auto";
-  audio.volume = 0.5;
-  return audio;
-});
+function makePool(src, size, volume) {
+  return Array.from({ length: size }, () => {
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    audio.volume = volume;
+    return audio;
+  });
+}
 
-const deathSoundPool = Array.from({ length: DEATH_SOUND_POOL_SIZE }, () => {
-  const audio = new Audio(DEATH_SOUND_SRC);
-  audio.preload = "auto";
-  audio.volume = 0.55;
-  return audio;
-});
+const shootSoundPool = makePool(SHOOT_SOUND_SRC, SHOOT_SOUND_POOL_SIZE, 0.5);
+const lightShotPool = makePool(LIGHT_SHOT_SOUND_SRC, LIGHT_SOUND_POOL_SIZE, 0.42);
+const heavyShotPool = makePool(HEAVY_SHOT_SOUND_SRC, HEAVY_SOUND_POOL_SIZE, 0.48);
+const shotgunPool = makePool(SHOTGUN_SOUND_SRC, SHOTGUN_SOUND_POOL_SIZE, 0.56);
+const sniperPool = makePool(SNIPER_SOUND_SRC, SNIPER_SOUND_POOL_SIZE, 0.53);
+const rocketPool = makePool(ROCKET_SOUND_SRC, ROCKET_SOUND_POOL_SIZE, 0.56);
+const flamePool = makePool(FLAMETHROWER_SOUND_SRC, FLAME_SOUND_POOL_SIZE, 0.38);
+const reloadPool = makePool(RELOAD_SOUND_SRC, RELOAD_SOUND_POOL_SIZE, 0.44);
+const deathSoundPool = makePool(DEATH_SOUND_SRC, DEATH_SOUND_POOL_SIZE, 0.55);
 
 const bgMusic = new Audio(MUSIC_SRC);
 bgMusic.preload = "auto";
@@ -347,12 +366,21 @@ bgMusic.loop = true;
 bgMusic.volume = 0.22;
 
 let shootSoundIndex = 0;
+let lightSoundIndex = 0;
+let heavySoundIndex = 0;
+let shotgunSoundIndex = 0;
+let sniperSoundIndex = 0;
+let rocketSoundIndex = 0;
+let flameSoundIndex = 0;
+let reloadSoundIndex = 0;
 let deathSoundIndex = 0;
 let prevMyBulletIds = new Set();
 let prevDeathEventCount = 0;
 let audioUnlocked = false;
 let prevBulletsById = new Map();
 let prevEnemiesById = new Map();
+let prevReloadUntilById = new Map();
+const lastFireSfxAtByWeapon = new Map();
 const fxParticles = [];
 
 function pointRectDistance(px, py, r) {
@@ -502,6 +530,60 @@ function playShootSound() {
   shootSoundIndex = (shootSoundIndex + 1) % shootSoundPool.length;
 }
 
+function playWeaponFireSound(weaponType) {
+  const wt = weaponType || "minigun";
+  const now = performance.now();
+  const minGap =
+    wt === "flamethrower" ? 85 :
+    wt === "minigun" ? 45 :
+    wt === "pistol" ? 65 : 0;
+  const last = lastFireSfxAtByWeapon.get(wt) || 0;
+  if (minGap > 0 && now - last < minGap) return;
+  lastFireSfxAtByWeapon.set(wt, now);
+
+  if (wt === "shotgun") {
+    playFromPool(shotgunPool, shotgunSoundIndex);
+    shotgunSoundIndex = (shotgunSoundIndex + 1) % shotgunPool.length;
+    return;
+  }
+  if (wt === "sniper") {
+    playFromPool(sniperPool, sniperSoundIndex);
+    sniperSoundIndex = (sniperSoundIndex + 1) % sniperPool.length;
+    return;
+  }
+  if (wt === "rocket") {
+    playFromPool(rocketPool, rocketSoundIndex);
+    rocketSoundIndex = (rocketSoundIndex + 1) % rocketPool.length;
+    return;
+  }
+  if (wt === "flamethrower") {
+    playFromPool(flamePool, flameSoundIndex);
+    flameSoundIndex = (flameSoundIndex + 1) % flamePool.length;
+    return;
+  }
+  if (wt === "katana") {
+    playFromPool(heavyShotPool, heavySoundIndex);
+    heavySoundIndex = (heavySoundIndex + 1) % heavyShotPool.length;
+    return;
+  }
+  if (wt === "pistol") {
+    playFromPool(lightShotPool, lightSoundIndex);
+    lightSoundIndex = (lightSoundIndex + 1) % lightShotPool.length;
+    return;
+  }
+  if (wt === "minigun") {
+    playFromPool(lightShotPool, lightSoundIndex);
+    lightSoundIndex = (lightSoundIndex + 1) % lightShotPool.length;
+    return;
+  }
+  playShootSound();
+}
+
+function playReloadSound() {
+  playFromPool(reloadPool, reloadSoundIndex);
+  reloadSoundIndex = (reloadSoundIndex + 1) % reloadPool.length;
+}
+
 function playDeathSound() {
   playFromPool(deathSoundPool, deathSoundIndex);
   deathSoundIndex = (deathSoundIndex + 1) % deathSoundPool.length;
@@ -525,7 +607,7 @@ function unlockAudio() {
   }
   audioUnlocked = true;
 
-  const probe = shootSoundPool[0];
+  const probe = shootSoundPool[0] || lightShotPool[0];
   const p = probe.play();
   if (!p) {
     probe.pause();
@@ -818,6 +900,7 @@ function leaveGameUi() {
   prevDeathEventCount = 0;
   prevBulletsById = new Map();
   prevEnemiesById = new Map();
+  prevReloadUntilById = new Map();
   fxParticles.length = 0;
   screenGame.classList.add("hidden");
   screenGame.setAttribute("hidden", "");
@@ -876,15 +959,36 @@ function onStateMessage(snap) {
 
   if (localIds.size > 0 && Array.isArray(snap?.bullets)) {
     const myBulletIds = new Set();
+    const myBulletWeapon = new Map();
     for (const bullet of snap.bullets) {
-      if (localIds.has(bullet.ownerId)) myBulletIds.add(bullet.id);
+      if (localIds.has(bullet.ownerId)) {
+        myBulletIds.add(bullet.id);
+        myBulletWeapon.set(bullet.id, bullet.weaponType || "minigun");
+      }
     }
     for (const id of myBulletIds) {
-      if (!prevMyBulletIds.has(id)) playShootSound();
+      if (!prevMyBulletIds.has(id)) playWeaponFireSound(myBulletWeapon.get(id));
     }
     prevMyBulletIds = myBulletIds;
   } else {
     prevMyBulletIds = new Set();
+  }
+
+  if (localIds.size > 0 && Array.isArray(snap?.players)) {
+    const nextReloadUntil = new Map();
+    const clock = Number(snap.serverNow) || Date.now();
+    for (const p of snap.players) {
+      if (!localIds.has(p.id)) continue;
+      const ru = Number(p.reloadUntil) || 0;
+      nextReloadUntil.set(p.id, ru);
+      const prevRu = Number(prevReloadUntilById.get(p.id) || 0);
+      if (ru > clock && ru > prevRu + 80) {
+        playReloadSound();
+      }
+    }
+    prevReloadUntilById = nextReloadUntil;
+  } else {
+    prevReloadUntilById = new Map();
   }
 
   lastStateReceiveMs = Date.now();
