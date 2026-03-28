@@ -41,6 +41,7 @@ const WEAPON_TYPES = ["pistol", "shotgun", "rocket", "sniper", "minigun", "flame
 const WEAPON_PROFILES = {
   pistol: {
     name: "Pistol",
+    healthMult: 0.95,
     fireCooldownMs: 260,
     magazineSize: 14,
     reloadMs: 1350,
@@ -54,6 +55,7 @@ const WEAPON_PROFILES = {
   },
   shotgun: {
     name: "Shotgun",
+    healthMult: 1.35,
     fireCooldownMs: 720,
     magazineSize: 5,
     reloadMs: 1900,
@@ -67,6 +69,7 @@ const WEAPON_PROFILES = {
   },
   rocket: {
     name: "Rocket Launcher",
+    healthMult: 1.55,
     fireCooldownMs: 930,
     magazineSize: 1,
     reloadMs: 2400,
@@ -83,6 +86,7 @@ const WEAPON_PROFILES = {
   },
   sniper: {
     name: "Sniper Rifle",
+    healthMult: 0.7,
     fireCooldownMs: 980,
     magazineSize: 1,
     reloadMs: 2100,
@@ -97,6 +101,7 @@ const WEAPON_PROFILES = {
   },
   minigun: {
     name: "Minigun",
+    healthMult: 1,
     fireCooldownMs: 120,
     magazineSize: 45,
     reloadMs: 1500,
@@ -110,6 +115,7 @@ const WEAPON_PROFILES = {
   },
   flamethrower: {
     name: "Flamethrower",
+    healthMult: 1.2,
     fireCooldownMs: 105,
     magazineSize: 80,
     reloadMs: 1700,
@@ -124,9 +130,11 @@ const WEAPON_PROFILES = {
   },
   katana: {
     name: "Katana",
+    healthMult: 3,
     fireCooldownMs: 240,
     usesAmmo: false,
     moveSpeedMult: 1.35,
+    meleeLunge: 13,
     meleeRange: 34,
     meleeArc: 0.95,
     meleeDamage: 320,
@@ -557,12 +565,28 @@ export class GameRoom {
     );
   }
 
+  _maxHpForWeapon(baseHp, weaponType) {
+    const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
+    const mult = Math.max(0.35, Math.min(3.5, Number(prof.healthMult) || 1));
+    return Math.max(1, Math.round(baseHp * mult));
+  }
+
+  _applyWeaponLoadout(ent, weaponType, baseHp) {
+    const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
+    ent.weaponType = weaponType;
+    if ("weaponName" in ent) ent.weaponName = prof.name;
+    ent.maxHp = this._maxHpForWeapon(baseHp, weaponType);
+    ent.hp = ent.maxHp;
+    ent.maxAmmo = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
+    ent.ammo = ent.maxAmmo;
+    ent.reloadUntil = 0;
+  }
+
   _spawnEnemyUnit() {
     const slot = this._nextEnemySlot++;
     const sp = randomSpawn(this._rng, this.walls);
     const weaponType = randomWeaponType(this._rng);
     const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
-    const ammoCap = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
     this.enemies.push({
       id: `enemy-${slot}`,
       name: `Intruder ${this.enemies.length + 1}`,
@@ -572,12 +596,13 @@ export class GameRoom {
       vx: 0,
       vy: 0,
       alive: true,
-      hp: ENEMY_MAX_HP,
-      maxHp: ENEMY_MAX_HP,
+      baseMaxHp: ENEMY_MAX_HP,
+      hp: this._maxHpForWeapon(ENEMY_MAX_HP, weaponType),
+      maxHp: this._maxHpForWeapon(ENEMY_MAX_HP, weaponType),
       weaponType,
       weaponName: prof.name,
-      ammo: ammoCap,
-      maxAmmo: ammoCap,
+      ammo: prof.usesAmmo === false ? 0 : (prof.magazineSize || 1),
+      maxAmmo: prof.usesAmmo === false ? 0 : (prof.magazineSize || 1),
       reloadUntil: 0,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
@@ -605,7 +630,6 @@ export class GameRoom {
     const spawn = randomSpawn(this._rng, this.walls);
     const weaponType = randomWeaponType(this._rng);
     const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
-    const ammoCap = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
     this.players.set(id, {
       id,
       name: name || `Tank ${this.players.size + 1}`,
@@ -615,12 +639,13 @@ export class GameRoom {
       vx: 0,
       vy: 0,
       alive: true,
-      hp: PLAYER_MAX_HP,
-      maxHp: PLAYER_MAX_HP,
+      baseMaxHp: PLAYER_MAX_HP,
+      hp: this._maxHpForWeapon(PLAYER_MAX_HP, weaponType),
+      maxHp: this._maxHpForWeapon(PLAYER_MAX_HP, weaponType),
       score: 0,
       weaponType,
-      ammo: ammoCap,
-      maxAmmo: ammoCap,
+      ammo: prof.usesAmmo === false ? 0 : (prof.magazineSize || 1),
+      maxAmmo: prof.usesAmmo === false ? 0 : (prof.magazineSize || 1),
       reloadUntil: 0,
       lastFire: 0,
       respawnAt: 0,
@@ -802,6 +827,7 @@ export class GameRoom {
     if ((profile.meleeRange || 0) > 0) {
       if (now - ent.lastFire < profile.fireCooldownMs) return;
       ent.lastFire = now;
+      this._applyMeleeLunge(ent, profile);
       this._performMelee(ent, now, profile);
       return;
     }
@@ -851,18 +877,37 @@ export class GameRoom {
     }
   }
 
+  _applyMeleeLunge(ent, profile) {
+    const lunge = Math.max(0, Math.min(20, Number(profile.meleeLunge ?? 12)));
+    if (lunge <= 0) return;
+
+    let nx = ent.x + Math.cos(ent.angle) * lunge;
+    let ny = ent.y + Math.sin(ent.angle) * lunge;
+
+    for (const w of this.walls) {
+      const res = resolveCircleRect(nx, ny, TANK_R, w);
+      if (!res) continue;
+      nx = res.cx;
+      ny = res.cy;
+    }
+
+    ent.x = nx;
+    ent.y = ny;
+    ent.vx *= 0.55;
+    ent.vy *= 0.55;
+  }
+
   _performMelee(ent, now, profile) {
     const side = ent._katanaSwingSide === -1 ? 1 : -1;
     ent._katanaSwingSide = side;
     this._spawnKatanaSwing(ent, now, profile, side);
 
-    const range = Math.max(8, profile.meleeRange || 24);
-    const halfArc = Math.max(0.18, (profile.meleeArc || 0.8) * 0.5);
+    const range = Math.max(10, (profile.meleeRange || 24) + 10);
+    const halfArc = Math.max(0.3, (profile.meleeArc || 0.8) * 0.72);
     const dmg = profile.meleeDamage || PLAYER_BULLET_DAMAGE;
     const ownerIsHuman = this.players.has(ent.id);
 
-    let best = null;
-    let bestD = Infinity;
+    const hits = [];
     const consider = (target, kind) => {
       if (!target.alive) return;
       if (kind === "player") {
@@ -876,10 +921,7 @@ export class GameRoom {
       const aim = Math.atan2(dy, dx);
       const err = Math.abs(wrapAngle(aim - ent.angle));
       if (err > halfArc) return;
-      if (d < bestD) {
-        bestD = d;
-        best = { target, kind };
-      }
+      hits.push({ target, kind, d });
     };
 
     if (this.mode === "pve" && ownerIsHuman) {
@@ -888,16 +930,19 @@ export class GameRoom {
       for (const p of this.players.values()) consider(p, "player");
     }
 
-    if (!best) return;
+    if (!hits.length) return;
     const killer = this.players.get(ent.id);
-    best.target.hp -= dmg;
-    if (best.kind === "player") {
-      if (best.target.hp <= 0) this._onPlayerHpDepleted(best.target, killer, now);
-      return;
-    }
-    if (best.target.hp <= 0) {
-      if (killer) killer.score += 1;
-      best.target.alive = false;
+    hits.sort((a, b) => a.d - b.d);
+    for (const hit of hits) {
+      hit.target.hp -= dmg;
+      if (hit.kind === "player") {
+        if (hit.target.hp <= 0) this._onPlayerHpDepleted(hit.target, killer, now);
+        continue;
+      }
+      if (hit.target.hp <= 0) {
+        if (killer) killer.score += 1;
+        hit.target.alive = false;
+      }
     }
   }
 
@@ -1077,15 +1122,10 @@ export class GameRoom {
     ent.vx = 0;
     ent.vy = 0;
     ent.alive = true;
-    if ("maxHp" in ent && "hp" in ent) {
-      ent.hp = ent.maxHp;
-    }
     if ("weaponType" in ent) {
-      ent.weaponType = randomWeaponType(this._rng);
-      const prof = WEAPON_PROFILES[ent.weaponType] || WEAPON_PROFILES.minigun;
-      ent.maxAmmo = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
-      ent.ammo = ent.maxAmmo;
-      ent.reloadUntil = 0;
+      const nextWeapon = randomWeaponType(this._rng);
+      const baseHp = Math.max(1, Number(ent.baseMaxHp) || (this.players.has(ent.id) ? PLAYER_MAX_HP : ENEMY_MAX_HP));
+      this._applyWeaponLoadout(ent, nextWeapon, baseHp);
     }
     if ("_lastPath" in ent) {
       ent._lastPath = null;
