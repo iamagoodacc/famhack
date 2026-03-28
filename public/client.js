@@ -416,8 +416,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
  * Flat fills. Barrel ends ~16px — near bullet spawn (TANK_R + BULLET_R + 2).
  */
 function drawTankSprite(ctx, hullColor, isLocal) {
-  const hullW = 16;
-  const hullH = 12;
+  const hullW = 30;
+  const hullH = 20;
   const treadW = 2.5;
   const lx = -hullW / 2;
   const ly = -hullH / 2;
@@ -498,8 +498,8 @@ function draw() {
   const { arena, walls, players, bullets } = state;
   const aw = arena.w;
   const ah = arena.h;
-  /** Slightly past “fit” so the arena fills the view and feels less distant (edges may clip). */
-  const VIEW_ZOOM = 1.12;
+  /** Slightly under “fit” so more of the arena is visible (maze appears smaller). */
+  const VIEW_ZOOM = 0.98;
   const base = Math.min(cw / aw, ch / ah);
   const scale = base * VIEW_ZOOM;
   const ox = (cw - aw * scale) / 2;
@@ -540,11 +540,24 @@ function draw() {
   }
 
   for (const wall of walls) {
+    let wx = wall.x;
+    let wy = wall.y;
+    let ww = wall.w;
+    let wh = wall.h;
+
+    // Render walls slightly thinner than their collision geometry.
+    if (wall.w >= wall.h) {
+      const thinH = wall.h * 0.78;
+      wy += (wall.h - thinH) / 2;
+      wh = thinH;
+    } else {
+      const thinW = wall.w * 0.78;
+      wx += (wall.w - thinW) / 2;
+      ww = thinW;
+    }
+
     ctx.fillStyle = "#3d4450";
-    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-    ctx.strokeStyle = "#252a32";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(wall.x + 0.5, wall.y + 0.5, wall.w - 1, wall.h - 1);
+    ctx.fillRect(wx, wy, ww, wh);
   }
 
   const vignette = ctx.createRadialGradient(aw * 0.5, ah * 0.5, Math.min(aw, ah) * 0.25, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.65);

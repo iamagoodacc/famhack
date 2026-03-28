@@ -12,9 +12,9 @@ export const ARENA_H = 640;
 
 const BORDER = 16;
 /** Inner maze wall thickness — matches large grid cells so passages stay wide. */
-const MAZE_WALL_T = 14;
+const MAZE_WALL_T = 12;
 const WALL_T = 16;
-const TANK_R = 10;
+const TANK_R = 20;
 const BULLET_R = 4;
 const BULLET_SPEED = 9;
 const MOVE_ACCEL = 0.35;
