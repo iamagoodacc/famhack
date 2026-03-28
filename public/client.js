@@ -308,13 +308,14 @@ function updateGameHint() {
     const b = bindingForSlot(0);
     const mv = `Move ${b.forward.map(formatKeyCode).join("/")}, ${b.left.map(formatKeyCode).join("/")}/${b.right.map(formatKeyCode).join("/")}, ${b.back.map(formatKeyCode).join("/")}`;
     const fi = b.fire.map(formatKeyCode).join("/");
-    gameHintEl.textContent = `${mv} · Fire: ${fi}`;
+    const re = b.reload.map(formatKeyCode).join("/");
+    gameHintEl.textContent = `${mv} · Fire: ${fi} · Reload: ${re}`;
     return;
   }
   const bits = [];
   for (let s = 0; s < n; s++) {
     const b = bindingForSlot(s);
-    bits.push(`P${s + 1} fire: ${b.fire.map(formatKeyCode).join("/")}`);
+    bits.push(`P${s + 1} fire: ${b.fire.map(formatKeyCode).join("/")} reload: ${b.reload.map(formatKeyCode).join("/")}`);
   }
   gameHintEl.textContent = bits.join(" · ") + " · open lobby to remap movement";
 }
@@ -712,12 +713,14 @@ window.addEventListener("keydown", (e) => {
   if (!gameActive) return;
   if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
   setKeyOnSlots(e.code, true);
+  emitInput();
 });
 
 window.addEventListener("keyup", (e) => {
   if (!gameActive) return;
   if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
   setKeyOnSlots(e.code, false);
+  emitInput();
 });
 
 window.addEventListener("pointerdown", unlockAudio, { passive: true });

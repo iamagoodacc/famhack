@@ -44,6 +44,7 @@ const WEAPON_PROFILES = {
     fireCooldownMs: 720,
     magazineSize: 5,
     reloadMs: 1900,
+    moveSpeedMult: 1.1,
     pelletCount: 6,
     spread: 0.28,
     bulletSpeed: 8.2,
@@ -56,6 +57,7 @@ const WEAPON_PROFILES = {
     fireCooldownMs: 930,
     magazineSize: 1,
     reloadMs: 2400,
+    moveSpeedMult: 0.95,
     pelletCount: 1,
     spread: 0,
     bulletSpeed: 5.9,
@@ -71,6 +73,7 @@ const WEAPON_PROFILES = {
     fireCooldownMs: 980,
     magazineSize: 1,
     reloadMs: 2100,
+    moveSpeedMult: 0.8,
     pelletCount: 1,
     spread: 0,
     bulletSpeed: 15,
@@ -84,6 +87,7 @@ const WEAPON_PROFILES = {
     fireCooldownMs: 120,
     magazineSize: 45,
     reloadMs: 1500,
+    moveSpeedMult: 0.9,
     pelletCount: 1,
     spread: 0.09,
     bulletSpeed: 8.8,
@@ -683,25 +687,30 @@ export class GameRoom {
   _applyTankPhysics(ent, input) {
     if (!ent.alive) return;
 
+    const profile = WEAPON_PROFILES[ent.weaponType] || WEAPON_PROFILES.minigun;
+    const moveMult = Math.max(0.55, Math.min(1.35, Number(profile.moveSpeedMult) || 1));
+    const accel = MOVE_ACCEL * moveMult;
+    const maxSpeed = MAX_SPEED * moveMult;
+
     if (input.left) ent.angle -= ROT_SPEED;
     if (input.right) ent.angle += ROT_SPEED;
 
     let ax = 0;
     let ay = 0;
     if (input.forward) {
-      ax += Math.cos(ent.angle) * MOVE_ACCEL;
-      ay += Math.sin(ent.angle) * MOVE_ACCEL;
+      ax += Math.cos(ent.angle) * accel;
+      ay += Math.sin(ent.angle) * accel;
     }
     if (input.back) {
-      ax -= Math.cos(ent.angle) * MOVE_ACCEL * 0.65;
-      ay -= Math.sin(ent.angle) * MOVE_ACCEL * 0.65;
+      ax -= Math.cos(ent.angle) * accel * 0.65;
+      ay -= Math.sin(ent.angle) * accel * 0.65;
     }
 
     ent.vx = (ent.vx + ax) * FRICTION;
     ent.vy = (ent.vy + ay) * FRICTION;
     const sp = Math.hypot(ent.vx, ent.vy);
-    if (sp > MAX_SPEED) {
-      const s = MAX_SPEED / sp;
+    if (sp > maxSpeed) {
+      const s = maxSpeed / sp;
       ent.vx *= s;
       ent.vy *= s;
     }

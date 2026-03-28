@@ -100,6 +100,7 @@ io.on("connection", (socket) => {
       left: !!payload.left,
       right: !!payload.right,
       fire: !!payload.fire,
+      reload: !!payload.reload,
     });
   });
 
