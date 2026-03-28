@@ -13,18 +13,7 @@ const GAME_MODES = [
       "Wave-based co-op vs bots (A* pathfinding). Clear the wave, short break, then the next. No friendly fire or self-hits from your shots.",
     available: true,
   },
-  {
-    id: "teams",
-    label: "Family Teams",
-    description: "Pick sides in the family dispute. Friendly fire off.",
-    available: false,
-  },
-  {
-    id: "survival",
-    label: "Home Invasion",
-    description: "Survive waves of intruders in your family home.",
-    available: false,
-  },
+
 ];
 
 const STORAGE_NAME = "famhack_name";
@@ -408,6 +397,7 @@ function escapeHtml(s) {
 }
 
 function buildModeOptions() {
+  roomCodeDisplay.textContent = ""
   const stored = localStorage.getItem(STORAGE_MODE) || "arena";
   const firstAvailable = GAME_MODES.find((m) => m.available);
   const resolved =
