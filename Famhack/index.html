@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Trouble</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Main Menu -->
+        <div id="main-menu" class="screen active">
+            <h1 class="title">TANK TROUBLE</h1>
+            <div class="menu-buttons">
+                <button id="btn-pvp">PvP Battle</button>
+                <button id="btn-pve">PvE Survival</button>
+                <button id="btn-online">Online</button>
+                <button id="btn-controls">Controls</button>
+            </div>
+        </div>
+
+        <!-- PvP Setup -->
+        <div id="pvp-setup" class="screen">
+            <h2>PvP Battle Setup</h2>
+            <div class="setup-option">
+                <label>Players:</label>
+                <div class="player-count-select">
+                    <button class="count-btn selected" data-count="2">2</button>
+                    <button class="count-btn" data-count="3">3</button>
+                    <button class="count-btn" data-count="4">4</button>
+                </div>
+            </div>
+            <div class="setup-option">
+                <label>Maze Size:</label>
+                <div class="maze-size-select">
+                    <button class="size-btn" data-size="small">Small</button>
+                    <button class="size-btn selected" data-size="medium">Medium</button>
+                    <button class="size-btn" data-size="large">Large</button>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button id="btn-start-pvp">Start Game</button>
+                <button class="btn-back">Back</button>
+            </div>
+        </div>
+
+        <!-- PvE Setup -->
+        <div id="pve-setup" class="screen">
+            <h2>PvE Survival Setup</h2>
+            <div class="setup-option">
+                <label>Players:</label>
+                <div class="player-count-select-pve">
+                    <button class="count-btn-pve selected" data-count="1">1</button>
+                    <button class="count-btn-pve" data-count="2">2</button>
+                    <button class="count-btn-pve" data-count="3">3</button>
+                    <button class="count-btn-pve" data-count="4">4</button>
+                </div>
+            </div>
+            <div class="setup-option">
+                <label>Maze Size:</label>
+                <div class="maze-size-select-pve">
+                    <button class="size-btn-pve" data-size="small">Small</button>
+                    <button class="size-btn-pve selected" data-size="medium">Medium</button>
+                    <button class="size-btn-pve" data-size="large">Large</button>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button id="btn-start-pve">Start Game</button>
+                <button class="btn-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Online Setup -->
+        <div id="online-setup" class="screen">
+            <h2>Online Multiplayer</h2>
+            <div class="setup-option">
+                <label>Your Name:</label>
+                <input type="text" id="online-name" class="name-input" value="Player" maxlength="12" style="border-color:#e94560;color:#e94560;">
+            </div>
+            <div class="setup-option">
+                <label>Maze Size:</label>
+                <div class="maze-size-select-online">
+                    <button class="size-btn-online" data-size="small">Small</button>
+                    <button class="size-btn-online selected" data-size="medium">Medium</button>
+                    <button class="size-btn-online" data-size="large">Large</button>
+                </div>
+            </div>
+            <div class="menu-buttons">
+                <button id="btn-host">Host Game</button>
+                <button id="btn-join-show">Join Game</button>
+                <button class="btn-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Online Lobby (Host) -->
+        <div id="online-lobby" class="screen">
+            <h2>Game Lobby</h2>
+            <p id="lobby-status">Setting up...</p>
+            <div id="lobby-room-code" class="room-code-display"></div>
+            <div id="lobby-players"></div>
+            <div class="menu-buttons">
+                <button id="btn-lobby-start" disabled>Start Game</button>
+                <button id="btn-lobby-cancel">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Online Join -->
+        <div id="online-join" class="screen">
+            <h2>Join Game</h2>
+            <div class="setup-option">
+                <label>Room Code:</label>
+                <input type="text" id="join-code" class="name-input" maxlength="6" placeholder="ABC123" style="border-color:#4ecdc4;color:#4ecdc4;text-transform:uppercase;min-width:140px;">
+            </div>
+            <p id="join-status"></p>
+            <div class="menu-buttons">
+                <button id="btn-join-connect">Connect</button>
+                <button class="btn-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Online Waiting (client after joining) -->
+        <div id="online-waiting" class="screen">
+            <h2>Waiting for Host</h2>
+            <p id="waiting-status">Connected! Waiting for host to start...</p>
+            <div id="waiting-players"></div>
+            <div class="menu-buttons">
+                <button id="btn-waiting-cancel">Leave</button>
+            </div>
+        </div>
+
+        <!-- Controls Setup -->
+        <div id="controls-setup" class="screen">
+            <h2>Controls</h2>
+            <div id="controls-container"></div>
+            <div class="menu-buttons">
+                <button id="btn-reset-controls">Reset to Defaults</button>
+                <button class="btn-back">Back</button>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div id="game-hud">
+                <div id="hud-left"></div>
+                <div id="hud-center"></div>
+                <div id="hud-right">
+                    <button id="btn-pause">Pause</button>
+                </div>
+            </div>
+            <canvas id="game-canvas"></canvas>
+        </div>
+
+        <!-- Pause Overlay -->
+        <div id="pause-overlay" class="overlay">
+            <div class="overlay-content">
+                <h2>Paused</h2>
+                <div class="menu-buttons">
+                    <button id="btn-resume">Resume</button>
+                    <button id="btn-quit">Quit to Menu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Round Over Overlay -->
+        <div id="round-over-overlay" class="overlay">
+            <div class="overlay-content">
+                <h2 id="round-over-text">Round Over!</h2>
+                <p id="round-over-detail"></p>
+                <div class="menu-buttons">
+                    <button id="btn-next-round">Next Round</button>
+                    <button id="btn-quit-round">Quit to Menu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Over Overlay (PvE) -->
+        <div id="game-over-overlay" class="overlay">
+            <div class="overlay-content">
+                <h2>Game Over!</h2>
+                <p id="game-over-detail"></p>
+                <div class="menu-buttons">
+                    <button id="btn-retry">Play Again</button>
+                    <button id="btn-quit-gameover">Quit to Menu</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="js/maze.js"></script>
+    <script src="js/tank.js"></script>
+    <script src="js/bullet.js"></script>
+    <script src="js/ai.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/controls.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/onlinegame.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
