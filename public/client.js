@@ -327,6 +327,8 @@ const SHOTGUN_SOUND_SRC = "assets/audio/shotgun.mp3";
 const SNIPER_SOUND_SRC = "assets/audio/sniper.mp3";
 const ROCKET_SOUND_SRC = "assets/audio/rocket.mp3";
 const FLAMETHROWER_SOUND_SRC = "assets/audio/flamethrower.mp3";
+const SWOOSH_SOUND_SRC = "assets/audio/shoot.mp3";
+const ROCKET_EXPLOSION_SOUND_SRC = "assets/audio/heavyshot.mp3";
 const RELOAD_SOUND_SRC = "assets/audio/gunreload.mp3";
 const DEATH_SOUND_SRC = "assets/audio/death.mp3";
 const MUSIC_SRC = "assets/audio/music.mp3";
@@ -338,6 +340,8 @@ const SHOTGUN_SOUND_POOL_SIZE = 4;
 const SNIPER_SOUND_POOL_SIZE = 4;
 const ROCKET_SOUND_POOL_SIZE = 4;
 const FLAME_SOUND_POOL_SIZE = 5;
+const SWOOSH_SOUND_POOL_SIZE = 4;
+const ROCKET_EXPLOSION_POOL_SIZE = 4;
 const RELOAD_SOUND_POOL_SIZE = 4;
 const DEATH_SOUND_POOL_SIZE = 4;
 
@@ -353,12 +357,19 @@ function makePool(src, size, volume) {
 const shootSoundPool = makePool(SHOOT_SOUND_SRC, SHOOT_SOUND_POOL_SIZE, 0.5);
 const lightShotPool = makePool(LIGHT_SHOT_SOUND_SRC, LIGHT_SOUND_POOL_SIZE, 0.42);
 const heavyShotPool = makePool(HEAVY_SHOT_SOUND_SRC, HEAVY_SOUND_POOL_SIZE, 0.48);
-const shotgunPool = makePool(SHOTGUN_SOUND_SRC, SHOTGUN_SOUND_POOL_SIZE, 0.56);
+const shotgunPool = makePool(SHOTGUN_SOUND_SRC, SHOTGUN_SOUND_POOL_SIZE, 0.39);
 const sniperPool = makePool(SNIPER_SOUND_SRC, SNIPER_SOUND_POOL_SIZE, 0.53);
 const rocketPool = makePool(ROCKET_SOUND_SRC, ROCKET_SOUND_POOL_SIZE, 0.56);
 const flamePool = makePool(FLAMETHROWER_SOUND_SRC, FLAME_SOUND_POOL_SIZE, 0.38);
+const swooshPool = makePool(SWOOSH_SOUND_SRC, SWOOSH_SOUND_POOL_SIZE, 0.24);
+const rocketExplosionPool = makePool(ROCKET_EXPLOSION_SOUND_SRC, ROCKET_EXPLOSION_POOL_SIZE, 0.52);
 const reloadPool = makePool(RELOAD_SOUND_SRC, RELOAD_SOUND_POOL_SIZE, 0.44);
 const deathSoundPool = makePool(DEATH_SOUND_SRC, DEATH_SOUND_POOL_SIZE, 0.55);
+
+const flameLoopSound = new Audio(FLAMETHROWER_SOUND_SRC);
+flameLoopSound.preload = "auto";
+flameLoopSound.loop = true;
+flameLoopSound.volume = 0.28;
 
 const bgMusic = new Audio(MUSIC_SRC);
 bgMusic.preload = "auto";
@@ -372,6 +383,8 @@ let shotgunSoundIndex = 0;
 let sniperSoundIndex = 0;
 let rocketSoundIndex = 0;
 let flameSoundIndex = 0;
+let swooshSoundIndex = 0;
+let rocketExplosionSoundIndex = 0;
 let reloadSoundIndex = 0;
 let deathSoundIndex = 0;
 let prevMyBulletIds = new Set();
@@ -380,6 +393,7 @@ let audioUnlocked = false;
 let prevBulletsById = new Map();
 let prevEnemiesById = new Map();
 let prevReloadUntilById = new Map();
+let prevExplosionIds = new Set();
 const lastFireSfxAtByWeapon = new Map();
 const fxParticles = [];
 
@@ -557,13 +571,14 @@ function playWeaponFireSound(weaponType) {
     return;
   }
   if (wt === "flamethrower") {
-    playFromPool(flamePool, flameSoundIndex);
-    flameSoundIndex = (flameSoundIndex + 1) % flamePool.length;
+    // Continuous flamethrower audio is managed by loop control.
     return;
   }
   if (wt === "katana") {
     playFromPool(heavyShotPool, heavySoundIndex);
     heavySoundIndex = (heavySoundIndex + 1) % heavyShotPool.length;
+    playFromPool(swooshPool, swooshSoundIndex);
+    swooshSoundIndex = (swooshSoundIndex + 1) % swooshPool.length;
     return;
   }
   if (wt === "pistol") {
@@ -577,6 +592,41 @@ function playWeaponFireSound(weaponType) {
     return;
   }
   playShootSound();
+}
+
+function playRocketExplosionSound() {
+  playFromPool(rocketExplosionPool, rocketExplosionSoundIndex);
+  rocketExplosionSoundIndex = (rocketExplosionSoundIndex + 1) % rocketExplosionPool.length;
+}
+
+function updateFlamethrowerLoopFromInput(snap) {
+  let shouldPlay = false;
+  if (audioUnlocked && gameActive && snap && Array.isArray(snap.players)) {
+    const playersById = new Map();
+    for (const p of snap.players) playersById.set(p.id, p);
+    for (const { socket: s, slot } of connectionSlots) {
+      if (!s?.id) continue;
+      const p = playersById.get(s.id);
+      if (!p || !p.alive) continue;
+      if (p.weaponType !== "flamethrower") continue;
+      if (keysBySlot[slot]?.fire) {
+        shouldPlay = true;
+        break;
+      }
+    }
+  }
+
+  if (shouldPlay) {
+    if (flameLoopSound.paused) {
+      flameLoopSound.currentTime = 0;
+      void flameLoopSound.play().catch(() => {});
+    }
+    return;
+  }
+  if (!flameLoopSound.paused) {
+    flameLoopSound.pause();
+    flameLoopSound.currentTime = 0;
+  }
 }
 
 function playReloadSound() {
@@ -816,6 +866,7 @@ window.addEventListener("keydown", (e) => {
   if (!gameActive) return;
   if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
   setKeyOnSlots(e.code, true);
+  updateFlamethrowerLoopFromInput(state);
   emitInput();
 });
 
@@ -823,6 +874,7 @@ window.addEventListener("keyup", (e) => {
   if (!gameActive) return;
   if (shouldPreventDefaultGameKey(e.code)) e.preventDefault();
   setKeyOnSlots(e.code, false);
+  updateFlamethrowerLoopFromInput(state);
   emitInput();
 });
 
@@ -901,6 +953,9 @@ function leaveGameUi() {
   prevBulletsById = new Map();
   prevEnemiesById = new Map();
   prevReloadUntilById = new Map();
+  prevExplosionIds = new Set();
+  flameLoopSound.pause();
+  flameLoopSound.currentTime = 0;
   fxParticles.length = 0;
   screenGame.classList.add("hidden");
   screenGame.setAttribute("hidden", "");
@@ -990,6 +1045,21 @@ function onStateMessage(snap) {
   } else {
     prevReloadUntilById = new Map();
   }
+
+  if (Array.isArray(snap?.explosions)) {
+    const nextExplosionIds = new Set();
+    for (const ex of snap.explosions) {
+      nextExplosionIds.add(ex.id);
+      if (!prevExplosionIds.has(ex.id) && ex.weaponType === "rocket") {
+        playRocketExplosionSound();
+      }
+    }
+    prevExplosionIds = nextExplosionIds;
+  } else {
+    prevExplosionIds = new Set();
+  }
+
+  updateFlamethrowerLoopFromInput(snap);
 
   lastStateReceiveMs = Date.now();
   lastServerNow = Number(snap.serverNow) || lastStateReceiveMs;
