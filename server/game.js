@@ -534,6 +534,8 @@ export class GameRoom {
   _spawnEnemyUnit() {
     const slot = this._nextEnemySlot++;
     const sp = randomSpawn(this._rng, this.walls);
+    const weaponType = randomWeaponType(this._rng);
+    const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
     this.enemies.push({
       id: `enemy-${slot}`,
       name: `Intruder ${this.enemies.length + 1}`,
@@ -545,7 +547,8 @@ export class GameRoom {
       alive: true,
       hp: ENEMY_MAX_HP,
       maxHp: ENEMY_MAX_HP,
-      weaponType: "minigun",
+      weaponType,
+      weaponName: prof.name,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
       _lastPath: null,
@@ -1052,6 +1055,8 @@ export class GameRoom {
         alive: e.alive,
         hp: e.hp,
         maxHp: e.maxHp,
+        weaponType: e.weaponType || "minigun",
+        weaponName: (WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).name,
       }));
     }
     return snap;

@@ -973,10 +973,26 @@ function hpBarClass(ratio) {
   return "hb-low";
 }
 
+function weaponLabelColor(weaponType) {
+  switch (weaponType) {
+    case "shotgun":
+      return "#f4b25f";
+    case "rocket":
+      return "#ff6b5f";
+    case "sniper":
+      return "#74c9ff";
+    case "minigun":
+      return "#8ee66b";
+    default:
+      return "#d0d7de";
+  }
+}
+
 function renderLeaderboard(snap) {
   if (!leaderboardBody || !leaderboardMeta) return;
 
   const serverNow = Number(snap.serverNow) || Date.now();
+  const clock = estimatedServerClock();
   const rows = snap.players?.length ? [...snap.players] : [];
   rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || String(a.name).localeCompare(String(b.name)));
 
@@ -1026,9 +1042,12 @@ function renderLeaderboard(snap) {
       const spin = reloadSpinHtml(clock, p.lastFiredAt, p.weaponCooldownMs);
       const st = statusForLeaderboard(snap, p, clock);
       const stCell = st ? `<span class="lb-st">${escapeHtml(st)}</span>` : "—";
+      const weapon = p.weaponName
+        ? `<span class="lb-weapon" style="color:${weaponLabelColor(p.weaponType)}">${escapeHtml(p.weaponName)}</span>`
+        : "";
       return `<tr class="${youCls}">
   <td class="lb-rank">${rank}</td>
-  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}</td>
+  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}${weapon}</td>
   <td class="lb-score">${p.score ?? 0}</td>
   <td class="lb-hp"><div class="lb-hp-bar ${hpBarClass(ratio)}" style="width:${pct}%"></div></td>
   <td class="lb-status">${stCell}</td>
@@ -1120,44 +1139,50 @@ function drawWeaponModel(ctx, weaponType, S) {
   const wt = weaponType || "minigun";
 
   if (wt === "shotgun") {
-    ctx.fillStyle = "#4a3a2a";
+    ctx.fillStyle = "#8f5b2e";
     ctx.fillRect(9 * S, -2.6 * S, 8 * S, 3.6 * S);
-    ctx.fillStyle = "#262626";
+    ctx.fillStyle = "#2f2f2f";
     ctx.fillRect(16 * S, -1.9 * S, 10 * S, 2.2 * S);
-    ctx.fillStyle = "#776a58";
+    ctx.fillStyle = "#d7c39b";
     ctx.fillRect(24.5 * S, -1.45 * S, 2.2 * S, 1.3 * S);
+    ctx.fillStyle = "#3d2a14";
+    ctx.fillRect(10 * S, -3.4 * S, 2.2 * S, 1.2 * S);
     return;
   }
 
   if (wt === "rocket") {
-    ctx.fillStyle = "#434952";
+    ctx.fillStyle = "#515a66";
     ctx.fillRect(8.5 * S, -3.2 * S, 12.5 * S, 5.2 * S);
-    ctx.fillStyle = "#2a2f36";
+    ctx.fillStyle = "#262c33";
     ctx.fillRect(20 * S, -2.2 * S, 8.2 * S, 3.2 * S);
-    ctx.fillStyle = "#d04a3c";
+    ctx.fillStyle = "#ff5a49";
     ctx.beginPath();
     ctx.moveTo(28.2 * S, -2.2 * S);
     ctx.lineTo(30.6 * S, -0.6 * S);
     ctx.lineTo(28.2 * S, 1 * S);
     ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = "#9aa4b4";
+    ctx.fillRect(9.5 * S, -0.5 * S, 2.2 * S, 1.2 * S);
     return;
   }
 
   if (wt === "sniper") {
-    ctx.fillStyle = "#2c3f53";
+    ctx.fillStyle = "#2d557d";
     ctx.fillRect(9 * S, -2.3 * S, 18 * S, 3 * S);
-    ctx.fillStyle = "#1e2c3c";
+    ctx.fillStyle = "#17324d";
     ctx.fillRect(15 * S, -4 * S, 7.5 * S, 1.6 * S);
-    ctx.fillStyle = "#9fb1c4";
+    ctx.fillStyle = "#b9dcff";
     ctx.fillRect(26.8 * S, -1.65 * S, 3.2 * S, 1.7 * S);
+    ctx.fillStyle = "#7ec8ff";
+    ctx.fillRect(17.4 * S, -3.6 * S, 1.8 * S, 0.8 * S);
     return;
   }
 
   // Minigun (default)
-  ctx.fillStyle = "#2e3136";
+  ctx.fillStyle = "#2f3f2f";
   ctx.fillRect(9.5 * S, -3.2 * S, 10 * S, 5 * S);
-  ctx.fillStyle = "#4a4f57";
+  ctx.fillStyle = "#6da64f";
   for (let i = 0; i < 4; i++) {
     ctx.fillRect((18 + i * 2.1) * S, (-2.2 + i * 0.1) * S, 3.5 * S, 0.95 * S);
     ctx.fillRect((18 + i * 2.1) * S, (-0.6 + i * 0.1) * S, 3.5 * S, 0.95 * S);
@@ -1169,11 +1194,11 @@ function drawBulletSprite(ctx, b) {
   const r = Math.max(2, Number(b.radius) || 3.5);
 
   if (wt === "shotgun") {
-    ctx.fillStyle = "#f5d28b";
+    ctx.fillStyle = "#ffd387";
     ctx.beginPath();
     ctx.ellipse(b.x, b.y, r * 1.2, r * 0.95, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = "rgba(120,80,35,0.65)";
+    ctx.strokeStyle = "rgba(146,89,33,0.8)";
     ctx.lineWidth = 0.8;
     ctx.stroke();
     return;
@@ -1184,18 +1209,22 @@ function drawBulletSprite(ctx, b) {
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(ang);
-    ctx.fillStyle = "rgba(255,130,70,0.2)";
+    ctx.fillStyle = "rgba(255,92,64,0.26)";
     ctx.beginPath();
     ctx.ellipse(-r * 1.8, 0, r * 1.6, r * 0.9, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#6f747c";
+    ctx.fillStyle = "#7b838d";
     ctx.fillRect(-r * 1.6, -r * 0.9, r * 2.6, r * 1.8);
-    ctx.fillStyle = "#db4d3e";
+    ctx.fillStyle = "#ff5a49";
     ctx.beginPath();
     ctx.moveTo(r * 1.1, 0);
     ctx.lineTo(r * 2, -r * 0.65);
     ctx.lineTo(r * 2, r * 0.65);
     ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 212, 120, 0.58)";
+    ctx.beginPath();
+    ctx.arc(-r * 1.6, 0, Math.max(1.2, r * 0.75), 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
     return;
@@ -1207,20 +1236,22 @@ function drawBulletSprite(ctx, b) {
     ctx.translate(b.x, b.y);
     ctx.rotate(ang);
     const lg = ctx.createLinearGradient(-r * 3, 0, r * 3, 0);
-    lg.addColorStop(0, "#9ecbff");
-    lg.addColorStop(1, "#e6f3ff");
+    lg.addColorStop(0, "#8bc8ff");
+    lg.addColorStop(1, "#f2fbff");
     ctx.fillStyle = lg;
     ctx.fillRect(-r * 2.8, -r * 0.45, r * 5.6, r * 0.9);
+    ctx.fillStyle = "rgba(161, 223, 255, 0.35)";
+    ctx.fillRect(-r * 3.4, -r * 0.2, r * 6.8, r * 0.4);
     ctx.restore();
     return;
   }
 
   // Minigun default: compact tracer round.
-  ctx.fillStyle = "#c8a050";
+  ctx.fillStyle = "#7bcf4f";
   ctx.beginPath();
   ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#ffe8b0";
+  ctx.fillStyle = "#d7ff9f";
   ctx.beginPath();
   ctx.arc(b.x - r * 0.25, b.y - r * 0.25, Math.max(1, r * 0.45), 0, Math.PI * 2);
   ctx.fill();
