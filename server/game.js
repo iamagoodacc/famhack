@@ -1,15 +1,20 @@
 /**
  * Server-authoritative Tank Trouble–style arena: walls, tanks, bouncing bullets.
- * Maze layout matches prototyping/js/maze.js: recursive backtracker, then dead-end
- * reduction, 2×2 open pockets, and random wall removal for loops / openness.
+ * Maze: recursive backtracker (same core as prototyping/js/maze.js) with
+ * shuffled neighbors for even branching, then a small number of extra passages
+ * for loops. Inner walls use MAZE_WALL_T (thinner than BORDER) so corridors
+ * read clearly — the prototype draws ~3px strokes; thick 16px fills on small
+ * cells looked like solid blocks.
  */
 
 export const ARENA_W = 900;
 export const ARENA_H = 640;
 
 const BORDER = 16;
+/** Inner maze wall thickness — matches large grid cells so passages stay wide. */
+const MAZE_WALL_T = 14;
 const WALL_T = 16;
-const TANK_R = 14;
+const TANK_R = 10;
 const BULLET_R = 4;
 const BULLET_SPEED = 9;
 const MOVE_ACCEL = 0.35;
@@ -56,6 +61,13 @@ function getUnvisitedNeighbors(cells, cols, rows, x, y) {
   return neighbors;
 }
 
+function shuffleInPlace(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
 function removeWallBetweenCells(cells, x1, y1, x2, y2) {
   if (x2 === x1 + 1) {
     cells[y1][x1].right = false;
@@ -72,58 +84,6 @@ function removeWallBetweenCells(cells, x1, y1, x2, y2) {
   }
 }
 
-function countOpenings(cells, x, y) {
-  let openings = 0;
-  const cell = cells[y][x];
-  if (!cell.top) openings++;
-  if (!cell.right) openings++;
-  if (!cell.bottom) openings++;
-  if (!cell.left) openings++;
-  return openings;
-}
-
-function openRandomWall(cells, cols, rows, x, y, rng) {
-  const options = [];
-  const cell = cells[y][x];
-  if (cell.top && y > 0) options.push({ nx: x, ny: y - 1 });
-  if (cell.right && x < cols - 1) options.push({ nx: x + 1, ny: y });
-  if (cell.bottom && y < rows - 1) options.push({ nx: x, ny: y + 1 });
-  if (cell.left && x > 0) options.push({ nx: x - 1, ny: y });
-  if (options.length === 0) return false;
-  const chosen = options[Math.floor(rng() * options.length)];
-  removeWallBetweenCells(cells, x, y, chosen.nx, chosen.ny);
-  return true;
-}
-
-function removeDeadEnds(cells, cols, rows, rng) {
-  let changed = true;
-  let passes = 0;
-  while (changed && passes < 3) {
-    changed = false;
-    passes++;
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        if (countOpenings(cells, x, y) <= 1) {
-          if (openRandomWall(cells, cols, rows, x, y, rng)) changed = true;
-        }
-      }
-    }
-  }
-}
-
-function createOpenAreas(cells, cols, rows, rng) {
-  if (cols < 3 || rows < 3) return;
-  const numAreas = Math.floor(rng() * 2) + 1 + Math.floor((cols * rows) / 30);
-  for (let i = 0; i < numAreas; i++) {
-    const cx = 1 + Math.floor(rng() * (cols - 2));
-    const cy = 1 + Math.floor(rng() * (rows - 2));
-    removeWallBetweenCells(cells, cx, cy, cx + 1, cy);
-    removeWallBetweenCells(cells, cx, cy, cx, cy + 1);
-    removeWallBetweenCells(cells, cx + 1, cy, cx + 1, cy + 1);
-    removeWallBetweenCells(cells, cx, cy + 1, cx + 1, cy + 1);
-  }
-}
-
 function countInternalWalls(cells, cols, rows) {
   let count = 0;
   for (let y = 0; y < rows; y++) {
@@ -135,12 +95,13 @@ function countInternalWalls(cells, cols, rows) {
   return count;
 }
 
-function removeRandomWalls(cells, cols, rows, rng) {
-  const totalInternalWalls = countInternalWalls(cells, cols, rows);
-  const toRemove = Math.floor(totalInternalWalls * (0.25 + rng() * 0.1));
+/** A few extra passages (loops) without tearing the maze apart. */
+function carveSparseLoops(cells, cols, rows, rng) {
+  const total = countInternalWalls(cells, cols, rows);
+  const target = Math.min(18, Math.floor(total * (0.055 + rng() * 0.035)));
   let removed = 0;
   let attempts = 0;
-  while (removed < toRemove && attempts < toRemove * 5) {
+  while (removed < target && attempts < target * 10) {
     attempts++;
     const x = Math.floor(rng() * cols);
     const y = Math.floor(rng() * rows);
@@ -149,11 +110,9 @@ function removeRandomWalls(cells, cols, rows, rng) {
         removeWallBetweenCells(cells, x, y, x + 1, y);
         removed++;
       }
-    } else {
-      if (y < rows - 1 && cells[y][x].bottom) {
-        removeWallBetweenCells(cells, x, y, x, y + 1);
-        removed++;
-      }
+    } else if (y < rows - 1 && cells[y][x].bottom) {
+      removeWallBetweenCells(cells, x, y, x, y + 1);
+      removed++;
     }
   }
 }
@@ -171,7 +130,8 @@ function mazeBacktracker(cells, cols, rows, rng) {
     if (neighbors.length === 0) {
       stack.pop();
     } else {
-      const next = neighbors[Math.floor(rng() * neighbors.length)];
+      shuffleInPlace(neighbors, rng);
+      const next = neighbors[0];
       removeWallBetweenCells(cells, current.x, current.y, next.x, next.y);
       cells[next.y][next.x].visited = true;
       stack.push(next);
@@ -179,16 +139,16 @@ function mazeBacktracker(cells, cols, rows, rng) {
   }
 }
 
-function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH) {
+function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, wallT) {
   const walls = [];
-  const half = WALL_T / 2;
+  const half = wallT / 2;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       if (x < cols - 1 && cells[y][x].right) {
         walls.push({
           x: innerX + (x + 1) * cellW - half,
           y: innerY + y * cellH,
-          w: WALL_T,
+          w: wallT,
           h: cellH,
         });
       }
@@ -197,7 +157,7 @@ function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH) {
           x: innerX + x * cellW,
           y: innerY + (y + 1) * cellH - half,
           w: cellW,
-          h: WALL_T,
+          h: wallT,
         });
       }
     }
@@ -205,10 +165,6 @@ function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH) {
   return walls;
 }
 
-/**
- * Same pipeline as prototyping/js/maze.js: perfect maze, then dead-end cleanup,
- * 2×2 pockets, and random wall thinning.
- */
 function generateMaze(rng) {
   const walls = outerBorderWalls();
   const innerX = BORDER;
@@ -216,18 +172,17 @@ function generateMaze(rng) {
   const innerW = ARENA_W - 2 * BORDER;
   const innerH = ARENA_H - 2 * BORDER;
 
-  const cols = 17;
-  const rows = 12;
+  /* Fewer, larger cells → wide corridors (inner ~868×608 → ~87×87px cells). */
+  const cols = 10;
+  const rows = 7;
   const cellW = innerW / cols;
   const cellH = innerH / rows;
 
   const cells = createCellGrid(cols, rows);
   mazeBacktracker(cells, cols, rows, rng);
-  removeDeadEnds(cells, cols, rows, rng);
-  createOpenAreas(cells, cols, rows, rng);
-  removeRandomWalls(cells, cols, rows, rng);
+  carveSparseLoops(cells, cols, rows, rng);
 
-  walls.push(...cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH));
+  walls.push(...cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, MAZE_WALL_T));
   return walls;
 }
 
