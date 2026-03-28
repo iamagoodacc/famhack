@@ -65,7 +65,7 @@ const WEAPON_PROFILES = {
     pelletCount: 6,
     spread: 0.28,
     bulletSpeed: 8.2,
-    damage: 22,
+    damage: 18,
     maxBounces: 2,
     bulletRadius: 3,
   },
@@ -79,12 +79,12 @@ const WEAPON_PROFILES = {
     pelletCount: 1,
     spread: 0,
     bulletSpeed: 5.9,
-    damage: 62,
+    damage: 74,
     maxBounces: 0,
     bulletRadius: 6,
     explodeOnWall: true,
     splashRadius: 52,
-    splashDamage: 44,
+    splashDamage: 52,
   },
   sniper: {
     name: "Sniper Rifle",
@@ -954,15 +954,13 @@ export class GameRoom {
       return;
     }
 
-    if (now - ent.lastFire < profile.fireCooldownMs) return;
-
-    // Check for rapid fire powerup
-    const rapidFirePowerup = ent.powerups?.find(p => p.type === "rapid_fire" && p.expiresAt > now);
+    let effectiveCooldown = profile.fireCooldownMs;
+    const rapidFirePowerup = ent.powerups?.find((p) => p.type === "rapid_fire" && p.expiresAt > now);
     if (rapidFirePowerup) {
       const fireRateMult = POWERUP_PROFILES.rapid_fire.fireRateMult;
-      const adjustedCooldown = profile.fireCooldownMs * fireRateMult;
-      if (now - ent.lastFire < adjustedCooldown) return;
+      effectiveCooldown = profile.fireCooldownMs * fireRateMult;
     }
+    if (now - ent.lastFire < effectiveCooldown) return;
 
     let fired = false;
 
@@ -1161,8 +1159,8 @@ export class GameRoom {
       explodeOnWall: !!profile.explodeOnWall,
       splashRadius: profile.splashRadius || 0,
       splashDamage: profile.splashDamage || 0,
-      // Check for powerup effects
-      piercing: owner.powerups?.some(p => p.type === "piercing" && p.expiresAt > now),
+      // Explosive projectiles (rockets) should always detonate on impact.
+      piercing: !profile.explodeOnWall && owner.powerups?.some((p) => p.type === "piercing" && p.expiresAt > now),
       deathRay: owner.powerups?.some(p => p.type === "death_ray" && p.expiresAt > now),
     });
     return true;

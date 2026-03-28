@@ -335,6 +335,14 @@ const RELOAD_SOUND_SRC = "assets/audio/gunreload.mp3";
 const DEATH_SOUND_SRC = "assets/audio/death.mp3";
 const MUSIC_SRC = "assets/audio/music.mp3";
 
+const POWERUP_ICON_SRC = {
+  ghost: "assets/powerups/ghost.svg",
+  rapid_fire: "assets/powerups/rapid_fire.svg",
+  piercing: "assets/powerups/piercing.svg",
+  health: "assets/powerups/health.svg",
+  death_ray: "assets/powerups/death_ray.svg",
+};
+
 const SHOOT_SOUND_POOL_SIZE = 6;
 const LIGHT_SOUND_POOL_SIZE = 6;
 const HEAVY_SOUND_POOL_SIZE = 5;
@@ -398,6 +406,23 @@ let prevReloadUntilById = new Map();
 let prevExplosionIds = new Set();
 const lastFireSfxAtByWeapon = new Map();
 const fxParticles = [];
+const powerupIconCache = new Map();
+
+function getPowerupIcon(type) {
+  const src = POWERUP_ICON_SRC[type];
+  if (!src) return null;
+
+  let img = powerupIconCache.get(type);
+  if (!img) {
+    img = new Image();
+    img.decoding = "async";
+    img.src = src;
+    powerupIconCache.set(type, img);
+  }
+
+  if (!img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) return null;
+  return img;
+}
 
 function pointRectDistance(px, py, r) {
   const nx = Math.max(r.x, Math.min(px, r.x + r.w));
@@ -1954,6 +1979,60 @@ function drawKatanaSwipeFx(ctx, swing, nowMs) {
   ctx.restore();
 }
 
+function drawPowerupSprite(ctx, p, clock) {
+  const pulse = 0.85 + 0.15 * Math.sin(clock * 0.008 + Number(p.id || 0));
+  const r = Math.max(8, Number(p.radius) || 12);
+
+  let core = "#d9e4ff";
+  let ring = "#8aa0ff";
+  if (p.type === "health") {
+    core = "#d5ffdf";
+    ring = "#52c277";
+  } else if (p.type === "ghost") {
+    core = "#efe8ff";
+    ring = "#b796ff";
+  } else if (p.type === "rapid_fire") {
+    core = "#ffecc5";
+    ring = "#ffb347";
+  } else if (p.type === "piercing") {
+    core = "#d4f4ff";
+    ring = "#51b8d8";
+  } else if (p.type === "death_ray") {
+    core = "#ffd4d8";
+    ring = "#f05566";
+  }
+
+  const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 1.9);
+  glow.addColorStop(0, `${ring}99`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r * 1.9 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = ring;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const icon = getPowerupIcon(p.type);
+  if (icon) {
+    const size = r * 1.7 * pulse;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * pulse, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(icon, p.x - size / 2, p.y - size / 2, size, size);
+    ctx.restore();
+  }
+}
+
 function draw() {
   if (!state || !canvasWrap) return;
 
@@ -2101,6 +2180,10 @@ function draw() {
 
   for (const ex of state.explosions || []) {
     drawExplosionFx(ctx, ex);
+  }
+
+  for (const p of state.powerups || []) {
+    drawPowerupSprite(ctx, p, clock);
   }
 
   for (const b of bullets) {
