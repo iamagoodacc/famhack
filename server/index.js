@@ -60,7 +60,7 @@ setInterval(() => {
 }, TICK_MS);
 
 /** Supported handshake `mode` values — add entries when you ship new modes (match client GAME_MODES). */
-const ALLOWED_MODES = new Set(["arena"]);
+const ALLOWED_MODES = new Set(["arena", "pve"]);
 
 io.on("connection", (socket) => {
   const name = socket.handshake.query?.name || "Player";
@@ -72,7 +72,7 @@ io.on("connection", (socket) => {
 
   if (rawRoom === "" || rawRoom === "new" || rawRoom === "create") {
     roomCode = generateRoomCode();
-    rooms.set(roomCode, new GameRoom());
+    rooms.set(roomCode, new GameRoom(mode));
   } else {
     roomCode = normalizeRoomCode(rawRoom);
     if (!roomCode || roomCode.length !== CODE_LEN || !rooms.has(roomCode)) {
@@ -84,7 +84,7 @@ io.on("connection", (socket) => {
 
   const gameRoom = rooms.get(roomCode);
   socket.join(ioRoomName(roomCode));
-  gameRoom.addPlayer(socket.id, String(name).slice(0, 24), mode);
+  gameRoom.addPlayer(socket.id, String(name).slice(0, 24));
 
   socket.emit("room", { code: roomCode });
   const snap = { ...gameRoom.getSnapshot(), roomCode };

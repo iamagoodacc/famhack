@@ -25,6 +25,12 @@ const FIRE_COOLDOWN_MS = 450;
 const MAX_BOUNCES = 12;
 const BULLET_OWNER_GRACE_MS = 180;
 
+/** Grid replan interval for PVE enemies (ticks). */
+const ENEMY_PATH_REPLAN = 12;
+const ENEMY_BASE_COUNT = 2;
+const ENEMY_PER_HUMAN = 1;
+const ENEMY_CAP = 7;
+
 /** Outer bounds only (always present). */
 function outerBorderWalls() {
   return [
@@ -166,7 +172,7 @@ function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, wallT
 }
 
 function generateMaze(rng) {
-  const walls = outerBorderWalls();
+  const wallRects = outerBorderWalls();
   const innerX = BORDER;
   const innerY = BORDER;
   const innerW = ARENA_W - 2 * BORDER;
@@ -182,8 +188,108 @@ function generateMaze(rng) {
   mazeBacktracker(cells, cols, rows, rng);
   carveSparseLoops(cells, cols, rows, rng);
 
-  walls.push(...cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, MAZE_WALL_T));
-  return walls;
+  wallRects.push(...cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, MAZE_WALL_T));
+
+  const cellData = [];
+  for (let y = 0; y < rows; y++) {
+    cellData[y] = [];
+    for (let x = 0; x < cols; x++) {
+      const c = cells[y][x];
+      cellData[y][x] = { top: c.top, right: c.right, bottom: c.bottom, left: c.left };
+    }
+  }
+
+  return {
+    walls: wallRects,
+    maze: {
+      cols,
+      rows,
+      innerX,
+      innerY,
+      cellW,
+      cellH,
+      cells: cellData,
+    },
+  };
+}
+
+function worldToCell(maze, x, y) {
+  let cx = Math.floor((x - maze.innerX) / maze.cellW);
+  let cy = Math.floor((y - maze.innerY) / maze.cellH);
+  cx = Math.max(0, Math.min(maze.cols - 1, cx));
+  cy = Math.max(0, Math.min(maze.rows - 1, cy));
+  return { cx, cy };
+}
+
+function cellKey(cx, cy) {
+  return `${cx},${cy}`;
+}
+
+function astar(maze, startCx, startCy, goalCx, goalCy) {
+  if (startCx === goalCx && startCy === goalCy) {
+    return [{ cx: startCx, cy: startCy }];
+  }
+  const cells = maze.cells;
+  const open = new Map();
+  const closed = new Set();
+  const goalK = cellKey(goalCx, goalCy);
+  const startK = cellKey(startCx, startCy);
+  const h = (a, b) => Math.abs(a.cx - b.cx) + Math.abs(a.cy - b.cy);
+
+  open.set(startK, { f: h({ cx: startCx, cy: startCy }, { cx: goalCx, cy: goalCy }), g: 0, cx: startCx, cy: startCy, parent: null });
+
+  while (open.size > 0) {
+    let bestK = null;
+    let bestF = Infinity;
+    for (const [k, node] of open) {
+      if (node.f < bestF) {
+        bestF = node.f;
+        bestK = k;
+      }
+    }
+    const cur = open.get(bestK);
+    open.delete(bestK);
+    if (bestK === goalK) {
+      const path = [];
+      let n = cur;
+      while (n) {
+        path.push({ cx: n.cx, cy: n.cy });
+        n = n.parent;
+      }
+      path.reverse();
+      return path;
+    }
+    closed.add(bestK);
+
+    const c = cells[cur.cy][cur.cx];
+    const neigh = [];
+    if (!c.top && cur.cy > 0) neigh.push({ cx: cur.cx, cy: cur.cy - 1 });
+    if (!c.right && cur.cx < maze.cols - 1) neigh.push({ cx: cur.cx + 1, cy: cur.cy });
+    if (!c.bottom && cur.cy < maze.rows - 1) neigh.push({ cx: cur.cx, cy: cur.cy + 1 });
+    if (!c.left && cur.cx > 0) neigh.push({ cx: cur.cx - 1, cy: cur.cy });
+
+    for (const nb of neigh) {
+      const nk = cellKey(nb.cx, nb.cy);
+      if (closed.has(nk)) continue;
+      const g = cur.g + 1;
+      const f = g + h(nb, { cx: goalCx, cy: goalCy });
+      const ex = open.get(nk);
+      if (!ex || g < ex.g) {
+        open.set(nk, { f, g, cx: nb.cx, cy: nb.cy, parent: cur });
+      }
+    }
+  }
+  return null;
+}
+
+function wrapAngle(d) {
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+}
+
+function isEnemyOwnerId(id) {
+  return typeof id === "string" && id.startsWith("enemy-");
 }
 
 function circleRectOverlap(cx, cy, r, rect) {
@@ -241,13 +347,47 @@ function randomSpawn(rng, walls) {
 }
 
 export class GameRoom {
-  constructor() {
+  constructor(mode = "arena") {
+    this.mode = mode;
     this.players = new Map();
     this.bullets = [];
     this.nextBulletId = 1;
     this.tick = 0;
     this._rng = Math.random;
-    this.walls = generateMaze(this._rng);
+    this._nextEnemySlot = 0;
+    const generated = generateMaze(this._rng);
+    this.walls = generated.walls;
+    this.maze = generated.maze;
+    this.enemies = [];
+  }
+
+  _desiredEnemyCount() {
+    return Math.min(ENEMY_CAP, ENEMY_BASE_COUNT + ENEMY_PER_HUMAN * Math.max(1, this.players.size));
+  }
+
+  _spawnEnemyUnit() {
+    const slot = this._nextEnemySlot++;
+    const sp = randomSpawn(this._rng, this.walls);
+    this.enemies.push({
+      id: `enemy-${slot}`,
+      name: `Intruder ${this.enemies.length + 1}`,
+      x: sp.x,
+      y: sp.y,
+      angle: this._rng() * Math.PI * 2,
+      vx: 0,
+      vy: 0,
+      alive: true,
+      lastFire: 0,
+      _pathAge: ENEMY_PATH_REPLAN,
+      _lastPath: null,
+      input: { forward: false, back: false, left: false, right: false, fire: false },
+    });
+  }
+
+  _syncEnemyCount() {
+    if (this.mode !== "pve") return;
+    const want = this._desiredEnemyCount();
+    while (this.enemies.length < want) this._spawnEnemyUnit();
   }
 
   addPlayer(id, name) {
@@ -265,6 +405,7 @@ export class GameRoom {
       lastFire: 0,
       input: { forward: false, back: false, left: false, right: false, fire: false },
     });
+    this._syncEnemyCount();
   }
 
   removePlayer(id) {
@@ -284,10 +425,111 @@ export class GameRoom {
     };
   }
 
-  _tryFire(p, now) {
-    if (!p.alive || now - p.lastFire < FIRE_COOLDOWN_MS) return;
-    const bx = p.x + Math.cos(p.angle) * (TANK_R + BULLET_R + 2);
-    const by = p.y + Math.sin(p.angle) * (TANK_R + BULLET_R + 2);
+  _closestLivingPlayer(ex, ey) {
+    let best = null;
+    let bestD = Infinity;
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      const d = Math.hypot(p.x - ex, p.y - ey);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  _enemyBrain(e, now) {
+    const input = { forward: false, back: false, left: false, right: false, fire: false };
+    const target = this._closestLivingPlayer(e.x, e.y);
+    if (!target) return input;
+
+    const m = this.maze;
+    const { cx, cy } = worldToCell(m, e.x, e.y);
+    const { cx: tcx, cy: tcy } = worldToCell(m, target.x, target.y);
+
+    e._pathAge++;
+    if (e._pathAge >= ENEMY_PATH_REPLAN || !e._lastPath) {
+      e._lastPath = astar(m, cx, cy, tcx, tcy);
+      e._pathAge = 0;
+    }
+    const path = e._lastPath;
+
+    let wx;
+    let wy;
+    if (path && path.length >= 2) {
+      const next = path[1];
+      wx = m.innerX + (next.cx + 0.5) * m.cellW;
+      wy = m.innerY + (next.cy + 0.5) * m.cellH;
+    } else {
+      wx = target.x;
+      wy = target.y;
+    }
+
+    const chase = Math.atan2(wy - e.y, wx - e.x);
+    const turn = wrapAngle(chase - e.angle);
+    const deadband = 0.085;
+    if (turn < -deadband) input.left = true;
+    else if (turn > deadband) input.right = true;
+    else input.forward = true;
+
+    const aim = Math.atan2(target.y - e.y, target.x - e.x);
+    const aimErr = wrapAngle(aim - e.angle);
+    const dist = Math.hypot(target.x - e.x, target.y - e.y);
+    if (Math.abs(aimErr) < 0.24 && dist < 540) input.fire = true;
+
+    return input;
+  }
+
+  _applyTankPhysics(ent, input) {
+    if (!ent.alive) return;
+
+    if (input.left) ent.angle -= ROT_SPEED;
+    if (input.right) ent.angle += ROT_SPEED;
+
+    let ax = 0;
+    let ay = 0;
+    if (input.forward) {
+      ax += Math.cos(ent.angle) * MOVE_ACCEL;
+      ay += Math.sin(ent.angle) * MOVE_ACCEL;
+    }
+    if (input.back) {
+      ax -= Math.cos(ent.angle) * MOVE_ACCEL * 0.65;
+      ay -= Math.sin(ent.angle) * MOVE_ACCEL * 0.65;
+    }
+
+    ent.vx = (ent.vx + ax) * FRICTION;
+    ent.vy = (ent.vy + ay) * FRICTION;
+    const sp = Math.hypot(ent.vx, ent.vy);
+    if (sp > MAX_SPEED) {
+      const s = MAX_SPEED / sp;
+      ent.vx *= s;
+      ent.vy *= s;
+    }
+
+    let nx = ent.x + ent.vx;
+    let ny = ent.y + ent.vy;
+
+    for (const w of this.walls) {
+      const res = resolveCircleRect(nx, ny, TANK_R, w);
+      if (res) {
+        nx = res.cx;
+        ny = res.cy;
+        const dot = ent.vx * res.nx + ent.vy * res.ny;
+        if (dot < 0) {
+          ent.vx -= 2 * dot * res.nx;
+          ent.vy -= 2 * dot * res.ny;
+        }
+      }
+    }
+    ent.x = nx;
+    ent.y = ny;
+  }
+
+  _tryFire(ent, now) {
+    if (!ent.alive || now - ent.lastFire < FIRE_COOLDOWN_MS) return;
+    const bx = ent.x + Math.cos(ent.angle) * (TANK_R + BULLET_R + 2);
+    const by = ent.y + Math.sin(ent.angle) * (TANK_R + BULLET_R + 2);
     let blocked = false;
     for (const w of this.walls) {
       if (circleRectOverlap(bx, by, BULLET_R, w)) {
@@ -296,17 +538,31 @@ export class GameRoom {
       }
     }
     if (blocked) return;
-    p.lastFire = now;
+    ent.lastFire = now;
     this.bullets.push({
       id: this.nextBulletId++,
-      ownerId: p.id,
+      ownerId: ent.id,
       born: now,
       x: bx,
       y: by,
-      vx: Math.cos(p.angle) * BULLET_SPEED,
-      vy: Math.sin(p.angle) * BULLET_SPEED,
+      vx: Math.cos(ent.angle) * BULLET_SPEED,
+      vy: Math.sin(ent.angle) * BULLET_SPEED,
       bounces: 0,
     });
+  }
+
+  _respawnTankAtRandom(ent) {
+    const sp = randomSpawn(this._rng, this.walls);
+    ent.x = sp.x;
+    ent.y = sp.y;
+    ent.angle = this._rng() * Math.PI * 2;
+    ent.vx = 0;
+    ent.vy = 0;
+    ent.alive = true;
+    if ("_lastPath" in ent) {
+      ent._lastPath = null;
+      ent._pathAge = ENEMY_PATH_REPLAN;
+    }
   }
 
   step(now) {
@@ -314,49 +570,18 @@ export class GameRoom {
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-
-      if (p.input.left) p.angle -= ROT_SPEED;
-      if (p.input.right) p.angle += ROT_SPEED;
-
-      let ax = 0;
-      let ay = 0;
-      if (p.input.forward) {
-        ax += Math.cos(p.angle) * MOVE_ACCEL;
-        ay += Math.sin(p.angle) * MOVE_ACCEL;
-      }
-      if (p.input.back) {
-        ax -= Math.cos(p.angle) * MOVE_ACCEL * 0.65;
-        ay -= Math.sin(p.angle) * MOVE_ACCEL * 0.65;
-      }
-
-      p.vx = (p.vx + ax) * FRICTION;
-      p.vy = (p.vy + ay) * FRICTION;
-      const sp = Math.hypot(p.vx, p.vy);
-      if (sp > MAX_SPEED) {
-        const s = MAX_SPEED / sp;
-        p.vx *= s;
-        p.vy *= s;
-      }
-
-      let nx = p.x + p.vx;
-      let ny = p.y + p.vy;
-
-      for (const w of this.walls) {
-        const res = resolveCircleRect(nx, ny, TANK_R, w);
-        if (res) {
-          nx = res.cx;
-          ny = res.cy;
-          const dot = p.vx * res.nx + p.vy * res.ny;
-          if (dot < 0) {
-            p.vx -= 2 * dot * res.nx;
-            p.vy -= 2 * dot * res.ny;
-          }
-        }
-      }
-      p.x = nx;
-      p.y = ny;
-
+      this._applyTankPhysics(p, p.input);
       if (p.input.fire) this._tryFire(p, now);
+    }
+
+    if (this.mode === "pve") {
+      for (const e of this.enemies) {
+        if (!e.alive) continue;
+        const brain = this._enemyBrain(e, now);
+        e.input = brain;
+        this._applyTankPhysics(e, brain);
+        if (brain.fire) this._tryFire(e, now);
+      }
     }
 
     const nextBullets = [];
@@ -395,23 +620,32 @@ export class GameRoom {
       b.vx = vx;
       b.vy = vy;
 
-      for (const p of this.players.values()) {
-        if (!p.alive) continue;
-        if (p.id === b.ownerId && now - b.born < BULLET_OWNER_GRACE_MS) continue;
-        const d = Math.hypot(p.x - b.x, p.y - b.y);
-        if (d < TANK_R + BULLET_R - 0.5) {
-          p.alive = false;
-          const killer = this.players.get(b.ownerId);
-          if (killer && killer.id !== p.id) killer.score += 1;
-          dead = true;
-          const sp = randomSpawn(this._rng, this.walls);
-          p.x = sp.x;
-          p.y = sp.y;
-          p.angle = this._rng() * Math.PI * 2;
-          p.vx = 0;
-          p.vy = 0;
-          p.alive = true;
-          break;
+      if (this.mode === "pve" && !isEnemyOwnerId(b.ownerId)) {
+        for (const e of this.enemies) {
+          if (!e.alive) continue;
+          const d = Math.hypot(e.x - b.x, e.y - b.y);
+          if (d < TANK_R + BULLET_R - 0.5) {
+            const killer = this.players.get(b.ownerId);
+            if (killer) killer.score += 1;
+            dead = true;
+            this._respawnTankAtRandom(e);
+            break;
+          }
+        }
+      }
+
+      if (!dead) {
+        for (const p of this.players.values()) {
+          if (!p.alive) continue;
+          if (p.id === b.ownerId && now - b.born < BULLET_OWNER_GRACE_MS) continue;
+          const d = Math.hypot(p.x - b.x, p.y - b.y);
+          if (d < TANK_R + BULLET_R - 0.5) {
+            const killer = this.players.get(b.ownerId);
+            if (killer && killer.id !== p.id) killer.score += 1;
+            dead = true;
+            this._respawnTankAtRandom(p);
+            break;
+          }
         }
       }
 
@@ -421,7 +655,8 @@ export class GameRoom {
   }
 
   getSnapshot() {
-    return {
+    const snap = {
+      mode: this.mode,
       arena: { w: ARENA_W, h: ARENA_H },
       walls: this.walls,
       players: Array.from(this.players.values()).map((p) => ({
@@ -441,5 +676,16 @@ export class GameRoom {
       })),
       tick: this.tick,
     };
+    if (this.mode === "pve") {
+      snap.enemies = this.enemies.map((e) => ({
+        id: e.id,
+        name: e.name,
+        x: e.x,
+        y: e.y,
+        angle: e.angle,
+        alive: e.alive,
+      }));
+    }
+    return snap;
   }
 }
