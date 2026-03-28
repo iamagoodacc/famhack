@@ -643,6 +643,7 @@ function tryStartMusic() {
   if (!audioUnlocked || !gameActive) return;
   if (!bgMusic.paused) return;
   void bgMusic.play().catch(() => {});
+  bgMusic.volume = 2.0;
 }
 
 function stopMusic() {
@@ -1459,7 +1460,7 @@ function weaponOutfitTone(weaponType, fallbackHex) {
   }
 }
 
-function drawWeaponModel(ctx, weaponType, S) {
+function drawWeaponModel(ctx, weaponType, S, swingT = 0, swingSide = 1) {
   const wt = weaponType || "minigun";
 
   if (wt === "pistol") {
@@ -1533,19 +1534,40 @@ function drawWeaponModel(ctx, weaponType, S) {
   }
 
   if (wt === "katana") {
+    const t = Math.max(0, Math.min(1, Number(swingT) || 0));
+    const dir = swingSide >= 0 ? 1 : -1;
+    const baseRot = -0.22 * dir;
+    const swingRot = (t - 0.5) * 1.15 * dir;
+
+    ctx.save();
+    ctx.translate(11.9 * S, 0);
+    ctx.rotate(baseRot + swingRot);
+
     ctx.fillStyle = "#2b2f36";
-    ctx.fillRect(9.8 * S, -0.8 * S, 3.8 * S, 1.6 * S);
-    ctx.fillStyle = "#d9dce2";
-    ctx.fillRect(13.2 * S, -0.55 * S, 14.8 * S, 1.1 * S);
-    ctx.fillStyle = "#ffd5a3";
-    ctx.fillRect(11.4 * S, -1.4 * S, 0.85 * S, 2.8 * S);
-    ctx.fillStyle = "#f2f6ff";
+    ctx.fillRect(-0.8 * S, -0.9 * S, 5.3 * S, 1.8 * S);
+    ctx.fillStyle = "#ffd7a6";
+    ctx.fillRect(1.2 * S, -1.5 * S, 1.1 * S, 3 * S);
+    ctx.fillStyle = "#d8dde6";
+    ctx.fillRect(4.2 * S, -0.7 * S, 18.5 * S, 1.4 * S);
+    ctx.fillStyle = "#f4f8ff";
     ctx.beginPath();
-    ctx.moveTo(28 * S, -0.55 * S);
-    ctx.lineTo(30.5 * S, 0);
-    ctx.lineTo(28 * S, 0.55 * S);
+    ctx.moveTo(22.5 * S, -0.72 * S);
+    ctx.lineTo(25.6 * S, 0);
+    ctx.lineTo(22.5 * S, 0.72 * S);
     ctx.closePath();
     ctx.fill();
+
+    if (t > 0.06) {
+      ctx.strokeStyle = `rgba(230, 245, 255, ${0.16 + t * 0.18})`;
+      ctx.lineWidth = (2.2 + t * 2.4) * S;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(8.7 * S, 0);
+      ctx.lineTo(22.9 * S, 0);
+      ctx.stroke();
+    }
+
+    ctx.restore();
     return;
   }
 
@@ -1703,7 +1725,7 @@ function drawBulletSprite(ctx, b) {
  * Top-down person with a gun (~1.4x bigger, more detail).
  * Facing right (angle=0).
  */
-function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
+function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun", katanaSwing = null) {
   const S = 1.4; // scale factor
   const outfit = weaponOutfitTone(weaponType, hullColor);
 
@@ -1785,7 +1807,9 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.fill();
 
   // Weapon model differs per weapon type.
-  drawWeaponModel(ctx, weaponType, S);
+  const swingT = katanaSwing ? Math.max(0, Math.min(1, Number(katanaSwing.progress) || 0)) : 0;
+  const swingSide = katanaSwing && Number(katanaSwing.side) < 0 ? -1 : 1;
+  drawWeaponModel(ctx, weaponType, S, swingT, swingSide);
 
   // Head
   const skinTone = "#e0b896";
@@ -1822,6 +1846,47 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.beginPath();
   ctx.arc(4.5 * S, -1.2 * S, 0.8 * S, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawKatanaSwipeFx(ctx, swing, nowMs) {
+  const expires = Number(swing?.endsAt) || 0;
+  const remaining = expires - nowMs;
+  if (remaining <= 0) return;
+
+  const duration = 130;
+  const t = 1 - Math.max(0, Math.min(1, remaining / duration));
+  const dir = Number(swing.side) < 0 ? -1 : 1;
+  const arc = Math.max(0.9, Number(swing.arc) || 1.2);
+  const range = Math.max(22, Number(swing.range) || 30);
+  const cx = Number(swing.x) || 0;
+  const cy = Number(swing.y) || 0;
+  const mid = Number(swing.angle) || 0;
+  const sweep = arc * 0.9;
+  const head = mid + dir * ((t - 0.5) * sweep * 2.1);
+  const a0 = head - dir * arc * 0.54;
+  const a1 = head + dir * arc * 0.54;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  const g = ctx.createRadialGradient(cx, cy, range * 0.35, cx, cy, range + 20);
+  g.addColorStop(0, "rgba(255,255,255,0)");
+  g.addColorStop(0.58, `rgba(188, 226, 255, ${0.1 + (1 - t) * 0.12})`);
+  g.addColorStop(1, "rgba(188, 226, 255, 0)");
+  ctx.strokeStyle = g;
+  ctx.lineWidth = 8;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(cx, cy, range + 8, a0, a1, dir < 0);
+  ctx.stroke();
+
+  ctx.strokeStyle = `rgba(244, 252, 255, ${0.2 + (1 - t) * 0.45})`;
+  ctx.lineWidth = 3.2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, range + 8, a0, a1, dir < 0);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 function draw() {
@@ -1950,6 +2015,21 @@ function draw() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
+  const clock = estimatedServerClock();
+
+  const katanaSwingsByOwner = new Map();
+  for (const s of state.swings || []) {
+    const expires = Number(s?.endsAt) || 0;
+    if (expires <= clock) continue;
+    const prev = katanaSwingsByOwner.get(s.ownerId);
+    if (!prev || Number(s.id) > Number(prev.id)) {
+      katanaSwingsByOwner.set(s.ownerId, {
+        ...s,
+        progress: 1 - Math.max(0, Math.min(1, (expires - clock) / 130)),
+      });
+    }
+  }
+
   for (const f of state.fires || []) {
     drawGroundFireFx(ctx, f);
   }
@@ -1969,11 +2049,13 @@ function draw() {
 
   for (const e of enemies) {
     if (!e.alive) continue;
+    const swing = katanaSwingsByOwner.get(e.id) || null;
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.rotate(e.angle);
-    drawTankSprite(ctx, ENEMY_HULL, false, e.weaponType || "minigun");
+    drawTankSprite(ctx, ENEMY_HULL, false, e.weaponType || "minigun", swing);
     ctx.restore();
+    if (swing) drawKatanaSwipeFx(ctx, swing, clock);
 
     const nameY = e.y - 20;
     const eMaxHp = e.maxHp != null ? e.maxHp : 100;
@@ -1989,7 +2071,6 @@ function draw() {
   }
 
   const mode = state.mode;
-  const clock = estimatedServerClock();
 
   for (const p of players) {
     const col = colorForId(p.id);
@@ -2012,13 +2093,15 @@ function draw() {
     }
 
     if (dead && mode === "deathmatch") {
+      const swing = katanaSwingsByOwner.get(p.id) || null;
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle);
       ctx.globalAlpha = 0.36;
-      drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
+      drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun", swing);
       ctx.restore();
       ctx.globalAlpha = 1;
+      if (swing) drawKatanaSwipeFx(ctx, swing, clock);
       const nameY = p.y - 26;
       ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
       ctx.textAlign = "center";
@@ -2030,11 +2113,13 @@ function draw() {
       continue;
     }
 
+    const swing = katanaSwingsByOwner.get(p.id) || null;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
+    drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun", swing);
     ctx.restore();
+    if (swing) drawKatanaSwipeFx(ctx, swing, clock);
 
     const nameY = p.y - 26;
     const maxHp = p.maxHp != null ? p.maxHp : 100;

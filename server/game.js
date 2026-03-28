@@ -129,7 +129,7 @@ const WEAPON_PROFILES = {
     moveSpeedMult: 1.35,
     meleeRange: 34,
     meleeArc: 0.95,
-    meleeDamage: 26,
+    meleeDamage: 320,
   },
 };
 
@@ -482,6 +482,8 @@ export class GameRoom {
     this._nextEnemySlot = 0;
     this.explosions = [];
     this.groundFires = [];
+    this.katanaSwings = [];
+    this.nextSwingId = 1;
     this.dmRound = 1;
     const generated = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this.walls = generated.walls;
@@ -506,6 +508,7 @@ export class GameRoom {
     this.bullets = [];
     this.explosions = [];
     this.groundFires = [];
+    this.katanaSwings = [];
     this.dmRound += 1;
     for (const p of this.players.values()) {
       this._respawnTankAtRandom(p);
@@ -849,6 +852,10 @@ export class GameRoom {
   }
 
   _performMelee(ent, now, profile) {
+    const side = ent._katanaSwingSide === -1 ? 1 : -1;
+    ent._katanaSwingSide = side;
+    this._spawnKatanaSwing(ent, now, profile, side);
+
     const range = Math.max(8, profile.meleeRange || 24);
     const halfArc = Math.max(0.18, (profile.meleeArc || 0.8) * 0.5);
     const dmg = profile.meleeDamage || PLAYER_BULLET_DAMAGE;
@@ -891,6 +898,26 @@ export class GameRoom {
     if (best.target.hp <= 0) {
       if (killer) killer.score += 1;
       best.target.alive = false;
+    }
+  }
+
+  _spawnKatanaSwing(ent, now, profile, side = 1) {
+    const range = Math.max(12, profile.meleeRange || 24);
+    const arc = Math.max(0.4, profile.meleeArc || 0.9) + 0.55;
+    const lifeMs = 130;
+    this.katanaSwings.push({
+      id: this.nextSwingId++,
+      ownerId: ent.id,
+      x: ent.x,
+      y: ent.y,
+      angle: ent.angle,
+      arc,
+      range,
+      side: side >= 0 ? 1 : -1,
+      endsAt: now + lifeMs,
+    });
+    if (this.katanaSwings.length > 120) {
+      this.katanaSwings.splice(0, this.katanaSwings.length - 120);
     }
   }
 
@@ -1086,6 +1113,10 @@ export class GameRoom {
       this.groundFires = this.groundFires
         .map((f) => ({ ...f, life: f.life - 1 }))
         .filter((f) => f.life > 0);
+    }
+
+    if (this.katanaSwings.length > 0) {
+      this.katanaSwings = this.katanaSwings.filter((s) => s.endsAt > now);
     }
 
     this._applyGroundFireContact(now);
@@ -1295,6 +1326,17 @@ export class GameRoom {
         r: f.r,
         life: f.life,
         maxLife: f.maxLife,
+      })),
+      swings: this.katanaSwings.map((s) => ({
+        id: s.id,
+        ownerId: s.ownerId,
+        x: s.x,
+        y: s.y,
+        angle: s.angle,
+        arc: s.arc,
+        range: s.range,
+        side: s.side,
+        endsAt: s.endsAt,
       })),
       deathEvents: this.deathEvents,
       tick: this.tick,
