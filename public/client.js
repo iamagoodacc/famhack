@@ -934,11 +934,6 @@ if (quickMazeRows && mazeRowsInput) mazeRowsInput.value = quickMazeRows.slice(0,
 if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
-} else {
-  const savedRoom = localStorage.getItem(STORAGE_ROOM);
-  if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
-    roomInput.value = normalizeRoomCode(savedRoom);
-  }
 }
 const quickRoomNorm = quickRoomRaw ? normalizeRoomCode(quickRoomRaw) : "";
 const roomOkForAutoplay =
