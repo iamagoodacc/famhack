@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tank Arena</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="ui">
+      <h1>Tank Arena</h1>
+      <p class="hint">WASD / arrows — move &amp; turn · Space — fire · Open another tab to play local multiplayer</p>
+      <div id="scores"></div>
+    </div>
+    <canvas id="c" width="900" height="640"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>
