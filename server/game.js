@@ -24,6 +24,8 @@ const ROT_SPEED = 0.055;
 const FIRE_COOLDOWN_MS = 450;
 const MAX_BOUNCES = 12;
 const BULLET_OWNER_GRACE_MS = 180;
+const PLAYER_MAX_HP = 100;
+const PLAYER_BULLET_DAMAGE = 34;
 
 /** Grid replan interval for PVE enemies (ticks). */
 const ENEMY_PATH_REPLAN = 12;
@@ -416,6 +418,8 @@ export class GameRoom {
       vx: 0,
       vy: 0,
       alive: true,
+      hp: PLAYER_MAX_HP,
+      maxHp: PLAYER_MAX_HP,
       score: 0,
       lastFire: 0,
       input: { forward: false, back: false, left: false, right: false, fire: false },
@@ -574,6 +578,9 @@ export class GameRoom {
     ent.vx = 0;
     ent.vy = 0;
     ent.alive = true;
+    if ("maxHp" in ent && "hp" in ent) {
+      ent.hp = ent.maxHp;
+    }
     if ("_lastPath" in ent) {
       ent._lastPath = null;
       ent._pathAge = ENEMY_PATH_REPLAN;
@@ -669,10 +676,13 @@ export class GameRoom {
             const d = Math.hypot(p.x - b.x, p.y - b.y);
             if (d < TANK_R + BULLET_R - 0.5) {
               const killer = this.players.get(b.ownerId);
-              if (killer && killer.id !== p.id) killer.score += 1;
-              this.deathEvents += 1;
+              p.hp -= PLAYER_BULLET_DAMAGE;
+              if (p.hp <= 0) {
+                if (killer && killer.id !== p.id) killer.score += 1;
+                this.deathEvents += 1;
+                this._respawnTankAtRandom(p);
+              }
               dead = true;
-              this._respawnTankAtRandom(p);
               break;
             }
           }
@@ -703,6 +713,8 @@ export class GameRoom {
         y: p.y,
         angle: p.angle,
         alive: p.alive,
+        hp: p.hp,
+        maxHp: p.maxHp,
         score: p.score,
       })),
       bullets: this.bullets.map((b) => ({

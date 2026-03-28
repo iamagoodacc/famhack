@@ -899,6 +899,39 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.quadraticCurveTo(x, y, x + rr, y);
 }
 
+/** World-space UI above player name. */
+function drawPlayerHealthBar(ctx, cx, topY, hp, maxHp) {
+  const maxH = Math.max(1, Number(maxHp) || 100);
+  const h = Math.max(0, Math.min(maxH, Number(hp)));
+  const ratio = h / maxH;
+  const w = 50;
+  const hBar = 5;
+  const x = cx - w / 2;
+  ctx.fillStyle = "rgba(0,0,0,0.52)";
+  ctx.fillRect(x - 1, topY - 1, w + 2, hBar + 2);
+  ctx.fillStyle = "#2a1810";
+  ctx.fillRect(x, topY, w, hBar);
+  const fillW = Math.max(0, w * ratio);
+  if (fillW > 0.5) {
+    const g = ctx.createLinearGradient(x, 0, x + w, 0);
+    if (ratio > 0.45) {
+      g.addColorStop(0, "#7ee787");
+      g.addColorStop(1, "#2f9e4f");
+    } else if (ratio > 0.2) {
+      g.addColorStop(0, "#ffa657");
+      g.addColorStop(1, "#c24e00");
+    } else {
+      g.addColorStop(0, "#ff7b72");
+      g.addColorStop(1, "#a40e26");
+    }
+    ctx.fillStyle = g;
+    ctx.fillRect(x, topY, fillW, hBar);
+  }
+  ctx.strokeStyle = "rgba(255,240,220,0.25)";
+  ctx.lineWidth = 0.6;
+  ctx.strokeRect(x + 0.25, topY + 0.25, w - 0.5, hBar - 0.5);
+}
+
 /**
  * Top-down person with a gun (~1.4x bigger, more detail).
  * Facing right (angle=0).
@@ -1204,6 +1237,10 @@ function draw() {
     ctx.restore();
 
     const nameY = p.y - 26;
+    const maxHp = p.maxHp != null ? p.maxHp : 100;
+    const curHp = p.hp != null ? p.hp : maxHp;
+    drawPlayerHealthBar(ctx, p.x, nameY - 13, curHp, maxHp);
+
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
