@@ -28,6 +28,7 @@ const ROOM_CODE_LEN = 6;
 
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
+const canvasWrap = document.getElementById("canvas-wrap");
 const scoresEl = document.getElementById("scores");
 const screenLobby = document.getElementById("screen-lobby");
 const screenGame = document.getElementById("screen-game");
@@ -241,11 +242,14 @@ function enterGame() {
   screenLobby.setAttribute("hidden", "");
   screenGame.classList.remove("hidden");
   screenGame.removeAttribute("hidden");
+  document.body.classList.add("game-active");
   gameActive = true;
+  queueMicrotask(() => state && draw());
 }
 
 function leaveGameUi() {
   gameActive = false;
+  document.body.classList.remove("game-active");
   roomHud.classList.add("hidden");
   currentRoomCode = null;
   screenGame.classList.add("hidden");
@@ -253,6 +257,11 @@ function leaveGameUi() {
   screenLobby.classList.remove("hidden");
   screenLobby.removeAttribute("hidden");
 }
+
+const resizeObserver = new ResizeObserver(() => {
+  if (gameActive && state) draw();
+});
+resizeObserver.observe(canvasWrap);
 
 function connect(name, mode, roomQuery) {
   socket?.disconnect();
@@ -390,47 +399,94 @@ function colorForId(id) {
 }
 
 function draw() {
-  if (!state) return;
+  if (!state || !canvasWrap) return;
+
+  const rect = canvasWrap.getBoundingClientRect();
+  const cw = Math.max(1, Math.floor(rect.width));
+  const ch = Math.max(1, Math.floor(rect.height));
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = cw * dpr;
+  canvas.height = ch * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#030508";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
   const { arena, walls, players, bullets } = state;
-  const w = arena.w;
-  const h = arena.h;
+  const aw = arena.w;
+  const ah = arena.h;
+  const scale = Math.min(cw / aw, ch / ah);
+  const ox = (cw - aw * scale) / 2;
+  const oy = (ch - ah * scale) / 2;
 
-  ctx.fillStyle = "#0d1117";
-  ctx.fillRect(0, 0, w, h);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#030508";
+  ctx.fillRect(0, 0, cw, ch);
 
-  ctx.strokeStyle = "#21262d";
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(scale, scale);
+
+  const bg = ctx.createRadialGradient(aw * 0.45, ah * 0.35, 0, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.85);
+  bg.addColorStop(0, "#141a24");
+  bg.addColorStop(0.55, "#0c1018");
+  bg.addColorStop(1, "#06080d");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, aw, ah);
+
+  ctx.strokeStyle = "rgba(88, 166, 255, 0.06)";
   ctx.lineWidth = 1;
-  for (let x = 0; x < w; x += 40) {
+  const gridStep = 40;
+  for (let x = 0; x <= aw; x += gridStep) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
+    ctx.lineTo(x, ah);
     ctx.stroke();
   }
-  for (let y = 0; y < h; y += 40) {
+  for (let y = 0; y <= ah; y += gridStep) {
     ctx.beginPath();
     ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
+    ctx.lineTo(aw, y);
     ctx.stroke();
   }
 
-  ctx.fillStyle = "#30363d";
   for (const wall of walls) {
+    const g = ctx.createLinearGradient(wall.x, wall.y, wall.x, wall.y + wall.h);
+    g.addColorStop(0, "#6e7681");
+    g.addColorStop(0.45, "#3d444d");
+    g.addColorStop(1, "#24292f");
+    ctx.fillStyle = g;
     ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-  }
-  ctx.strokeStyle = "#484f58";
-  ctx.lineWidth = 2;
-  for (const wall of walls) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+    ctx.lineWidth = 1;
     ctx.strokeRect(wall.x + 0.5, wall.y + 0.5, wall.w - 1, wall.h - 1);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
+    ctx.beginPath();
+    ctx.moveTo(wall.x + 1, wall.y + wall.h - 0.5);
+    ctx.lineTo(wall.x + wall.w - 1, wall.y + wall.h - 0.5);
+    ctx.stroke();
   }
+
+  const vignette = ctx.createRadialGradient(aw * 0.5, ah * 0.5, Math.min(aw, ah) * 0.25, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.65);
+  vignette.addColorStop(0, "rgba(0,0,0,0)");
+  vignette.addColorStop(1, "rgba(0,0,0,0.35)");
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, aw, ah);
 
   for (const b of bullets) {
+    const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, 10);
+    g.addColorStop(0, "#fff5e6");
+    g.addColorStop(0.25, "#ff9b6a");
+    g.addColorStop(0.7, "#ff5533");
+    g.addColorStop(1, "rgba(180,40,20,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 10, 0, Math.PI * 2);
+    ctx.fill();
     ctx.beginPath();
     ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#ff7b72";
+    ctx.fillStyle = "#fff8f0";
     ctx.fill();
-    ctx.strokeStyle = "#ffb1ab";
-    ctx.lineWidth = 1;
-    ctx.stroke();
   }
 
   for (const p of players) {
@@ -438,15 +494,22 @@ function draw() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    ctx.fillStyle = col;
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = p.id === myId ? 3 : 2;
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
     ctx.beginPath();
+    ctx.ellipse(0, 6, 18, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
     const tw = 32;
     const th = 24;
     const rr = 4;
     const lx = -tw / 2;
     const ly = -th / 2;
+    const bodyGrad = ctx.createLinearGradient(lx, ly, lx + tw, ly + th);
+    bodyGrad.addColorStop(0, col);
+    bodyGrad.addColorStop(1, shadeColor(col, -35));
+    ctx.fillStyle = bodyGrad;
+    ctx.strokeStyle = p.id === myId ? "#e6edf3" : "rgba(255,255,255,0.85)";
+    ctx.lineWidth = p.id === myId ? 2.5 : 1.75;
+    ctx.beginPath();
     ctx.moveTo(lx + rr, ly);
     ctx.lineTo(lx + tw - rr, ly);
     ctx.quadraticCurveTo(lx + tw, ly, lx + tw, ly + rr);
@@ -459,13 +522,29 @@ function draw() {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = "#ffffff";
+    ctx.fillStyle = "#f0f3f6";
     ctx.fillRect(10, -4, 10, 8);
     ctx.restore();
 
-    ctx.font = "11px Segoe UI, sans-serif";
-    ctx.fillStyle = "#c9d1d9";
+    const nameY = p.y - 24;
+    ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(p.name, p.x, p.y - 22);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.strokeText(p.name, p.x, nameY);
+    ctx.fillStyle = "#e6edf3";
+    ctx.fillText(p.name, p.x, nameY);
   }
+
+  ctx.restore();
+}
+
+/** Darken/lighten hex color for simple shading. */
+function shadeColor(hex, percent) {
+  const n = hex.replace("#", "");
+  const num = parseInt(n, 16);
+  const r = Math.max(0, Math.min(255, (num >> 16) + percent));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + percent));
+  const b = Math.max(0, Math.min(255, (num & 0xff) + percent));
+  return `rgb(${r},${g},${b})`;
 }

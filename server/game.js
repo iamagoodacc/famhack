@@ -1,6 +1,7 @@
 /**
  * Server-authoritative Tank Trouble–style arena: walls, tanks, bouncing bullets.
- * Interior layout: grid maze from recursive backtracker (classic orthogonal maze).
+ * Maze layout matches prototyping/js/maze.js: recursive backtracker, then dead-end
+ * reduction, 2×2 open pockets, and random wall removal for loops / openness.
  */
 
 export const ARENA_W = 900;
@@ -29,16 +30,184 @@ function outerBorderWalls() {
   ];
 }
 
-function shuffleInPlace(arr, rng) {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+function createCellGrid(cols, rows) {
+  const cells = [];
+  for (let y = 0; y < rows; y++) {
+    cells[y] = [];
+    for (let x = 0; x < cols; x++) {
+      cells[y][x] = {
+        top: true,
+        right: true,
+        bottom: true,
+        left: true,
+        visited: false,
+      };
+    }
+  }
+  return cells;
+}
+
+function getUnvisitedNeighbors(cells, cols, rows, x, y) {
+  const neighbors = [];
+  if (y > 0 && !cells[y - 1][x].visited) neighbors.push({ x, y: y - 1 });
+  if (x < cols - 1 && !cells[y][x + 1].visited) neighbors.push({ x: x + 1, y });
+  if (y < rows - 1 && !cells[y + 1][x].visited) neighbors.push({ x, y: y + 1 });
+  if (x > 0 && !cells[y][x - 1].visited) neighbors.push({ x: x - 1, y });
+  return neighbors;
+}
+
+function removeWallBetweenCells(cells, x1, y1, x2, y2) {
+  if (x2 === x1 + 1) {
+    cells[y1][x1].right = false;
+    cells[y2][x2].left = false;
+  } else if (x2 === x1 - 1) {
+    cells[y1][x1].left = false;
+    cells[y2][x2].right = false;
+  } else if (y2 === y1 + 1) {
+    cells[y1][x1].bottom = false;
+    cells[y2][x2].top = false;
+  } else if (y2 === y1 - 1) {
+    cells[y1][x1].top = false;
+    cells[y2][x2].bottom = false;
   }
 }
 
+function countOpenings(cells, x, y) {
+  let openings = 0;
+  const cell = cells[y][x];
+  if (!cell.top) openings++;
+  if (!cell.right) openings++;
+  if (!cell.bottom) openings++;
+  if (!cell.left) openings++;
+  return openings;
+}
+
+function openRandomWall(cells, cols, rows, x, y, rng) {
+  const options = [];
+  const cell = cells[y][x];
+  if (cell.top && y > 0) options.push({ nx: x, ny: y - 1 });
+  if (cell.right && x < cols - 1) options.push({ nx: x + 1, ny: y });
+  if (cell.bottom && y < rows - 1) options.push({ nx: x, ny: y + 1 });
+  if (cell.left && x > 0) options.push({ nx: x - 1, ny: y });
+  if (options.length === 0) return false;
+  const chosen = options[Math.floor(rng() * options.length)];
+  removeWallBetweenCells(cells, x, y, chosen.nx, chosen.ny);
+  return true;
+}
+
+function removeDeadEnds(cells, cols, rows, rng) {
+  let changed = true;
+  let passes = 0;
+  while (changed && passes < 3) {
+    changed = false;
+    passes++;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (countOpenings(cells, x, y) <= 1) {
+          if (openRandomWall(cells, cols, rows, x, y, rng)) changed = true;
+        }
+      }
+    }
+  }
+}
+
+function createOpenAreas(cells, cols, rows, rng) {
+  if (cols < 3 || rows < 3) return;
+  const numAreas = Math.floor(rng() * 2) + 1 + Math.floor((cols * rows) / 30);
+  for (let i = 0; i < numAreas; i++) {
+    const cx = 1 + Math.floor(rng() * (cols - 2));
+    const cy = 1 + Math.floor(rng() * (rows - 2));
+    removeWallBetweenCells(cells, cx, cy, cx + 1, cy);
+    removeWallBetweenCells(cells, cx, cy, cx, cy + 1);
+    removeWallBetweenCells(cells, cx + 1, cy, cx + 1, cy + 1);
+    removeWallBetweenCells(cells, cx, cy + 1, cx + 1, cy + 1);
+  }
+}
+
+function countInternalWalls(cells, cols, rows) {
+  let count = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (x < cols - 1 && cells[y][x].right) count++;
+      if (y < rows - 1 && cells[y][x].bottom) count++;
+    }
+  }
+  return count;
+}
+
+function removeRandomWalls(cells, cols, rows, rng) {
+  const totalInternalWalls = countInternalWalls(cells, cols, rows);
+  const toRemove = Math.floor(totalInternalWalls * (0.25 + rng() * 0.1));
+  let removed = 0;
+  let attempts = 0;
+  while (removed < toRemove && attempts < toRemove * 5) {
+    attempts++;
+    const x = Math.floor(rng() * cols);
+    const y = Math.floor(rng() * rows);
+    if (rng() > 0.5) {
+      if (x < cols - 1 && cells[y][x].right) {
+        removeWallBetweenCells(cells, x, y, x + 1, y);
+        removed++;
+      }
+    } else {
+      if (y < rows - 1 && cells[y][x].bottom) {
+        removeWallBetweenCells(cells, x, y, x, y + 1);
+        removed++;
+      }
+    }
+  }
+}
+
+function mazeBacktracker(cells, cols, rows, rng) {
+  const stack = [];
+  const startX = Math.floor(rng() * cols);
+  const startY = Math.floor(rng() * rows);
+  cells[startY][startX].visited = true;
+  stack.push({ x: startX, y: startY });
+
+  while (stack.length > 0) {
+    const current = stack[stack.length - 1];
+    const neighbors = getUnvisitedNeighbors(cells, cols, rows, current.x, current.y);
+    if (neighbors.length === 0) {
+      stack.pop();
+    } else {
+      const next = neighbors[Math.floor(rng() * neighbors.length)];
+      removeWallBetweenCells(cells, current.x, current.y, next.x, next.y);
+      cells[next.y][next.x].visited = true;
+      stack.push(next);
+    }
+  }
+}
+
+function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH) {
+  const walls = [];
+  const half = WALL_T / 2;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (x < cols - 1 && cells[y][x].right) {
+        walls.push({
+          x: innerX + (x + 1) * cellW - half,
+          y: innerY + y * cellH,
+          w: WALL_T,
+          h: cellH,
+        });
+      }
+      if (y < rows - 1 && cells[y][x].bottom) {
+        walls.push({
+          x: innerX + x * cellW,
+          y: innerY + (y + 1) * cellH - half,
+          w: cellW,
+          h: WALL_T,
+        });
+      }
+    }
+  }
+  return walls;
+}
+
 /**
- * Perfect orthogonal maze (recursive backtracker / DFS): one spanning tree of the
- * cell graph, so every cell is reachable and there are no isolated rooms.
+ * Same pipeline as prototyping/js/maze.js: perfect maze, then dead-end cleanup,
+ * 2×2 pockets, and random wall thinning.
  */
 function generateMaze(rng) {
   const walls = outerBorderWalls();
@@ -52,65 +221,13 @@ function generateMaze(rng) {
   const cellW = innerW / cols;
   const cellH = innerH / rows;
 
-  /** Vertical segments between column i and i+1 (length cols-1 x rows). */
-  const vert = Array.from({ length: cols - 1 }, () => Array(rows).fill(true));
-  /** Horizontal segments between row j and j+1 (length cols x rows-1). */
-  const horiz = Array.from({ length: cols }, () => Array(rows - 1).fill(true));
+  const cells = createCellGrid(cols, rows);
+  mazeBacktracker(cells, cols, rows, rng);
+  removeDeadEnds(cells, cols, rows, rng);
+  createOpenAreas(cells, cols, rows, rng);
+  removeRandomWalls(cells, cols, rows, rng);
 
-  const visited = Array.from({ length: cols }, () => Array(rows).fill(false));
-  const si = Math.floor(rng() * cols);
-  const sj = Math.floor(rng() * rows);
-  visited[si][sj] = true;
-  const stack = [[si, sj]];
-
-  while (stack.length) {
-    const [i, j] = stack[stack.length - 1];
-    const next = [];
-    if (j > 0 && !visited[i][j - 1]) next.push({ dir: "N", ni: i, nj: j - 1 });
-    if (j < rows - 1 && !visited[i][j + 1]) next.push({ dir: "S", ni: i, nj: j + 1 });
-    if (i > 0 && !visited[i - 1][j]) next.push({ dir: "W", ni: i - 1, nj: j });
-    if (i < cols - 1 && !visited[i + 1][j]) next.push({ dir: "E", ni: i + 1, nj: j });
-
-    shuffleInPlace(next, rng);
-
-    let moved = false;
-    for (const step of next) {
-      if (step.dir === "N") horiz[i][j - 1] = false;
-      else if (step.dir === "S") horiz[i][j] = false;
-      else if (step.dir === "E") vert[i][j] = false;
-      else if (step.dir === "W") vert[i - 1][j] = false;
-      visited[step.ni][step.nj] = true;
-      stack.push([step.ni, step.nj]);
-      moved = true;
-      break;
-    }
-    if (!moved) stack.pop();
-  }
-
-  const half = WALL_T / 2;
-  for (let i = 0; i < cols - 1; i++) {
-    for (let j = 0; j < rows; j++) {
-      if (!vert[i][j]) continue;
-      walls.push({
-        x: innerX + (i + 1) * cellW - half,
-        y: innerY + j * cellH,
-        w: WALL_T,
-        h: cellH,
-      });
-    }
-  }
-  for (let i = 0; i < cols; i++) {
-    for (let j = 0; j < rows - 1; j++) {
-      if (!horiz[i][j]) continue;
-      walls.push({
-        x: innerX + i * cellW,
-        y: innerY + (j + 1) * cellH - half,
-        w: cellW,
-        h: WALL_T,
-      });
-    }
-  }
-
+  walls.push(...cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH));
   return walls;
 }
 

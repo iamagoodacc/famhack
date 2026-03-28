@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Tank Arena</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -48,18 +48,20 @@
       </div>
     </main>
 
-    <div id="screen-game" class="screen hidden">
-      <div id="ui">
+    <div id="screen-game" class="screen screen-game hidden">
+      <header class="game-ui">
         <div id="room-hud" class="room-hud hidden">
           <span class="room-hud-label">Room</span>
           <code id="room-code-display" class="room-code-display"></code>
           <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
           <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
         </div>
-        <p class="hint">WASD / arrows — move &amp; turn · Space — fire · Friends: same URL as you, then enter this room code</p>
-        <div id="scores"></div>
+        <p class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
+        <div id="scores" class="scores-bar"></div>
+      </header>
+      <div id="canvas-wrap" class="canvas-wrap">
+        <canvas id="c" aria-label="Game"></canvas>
       </div>
-      <canvas id="c" width="900" height="640"></canvas>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
