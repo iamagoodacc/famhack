@@ -1116,11 +1116,121 @@ function drawReloadSpinner(ctx, cx, nameY, name, now, lastFiredAt, weaponCooldow
   ctx.restore();
 }
 
+function drawWeaponModel(ctx, weaponType, S) {
+  const wt = weaponType || "minigun";
+
+  if (wt === "shotgun") {
+    ctx.fillStyle = "#4a3a2a";
+    ctx.fillRect(9 * S, -2.6 * S, 8 * S, 3.6 * S);
+    ctx.fillStyle = "#262626";
+    ctx.fillRect(16 * S, -1.9 * S, 10 * S, 2.2 * S);
+    ctx.fillStyle = "#776a58";
+    ctx.fillRect(24.5 * S, -1.45 * S, 2.2 * S, 1.3 * S);
+    return;
+  }
+
+  if (wt === "rocket") {
+    ctx.fillStyle = "#434952";
+    ctx.fillRect(8.5 * S, -3.2 * S, 12.5 * S, 5.2 * S);
+    ctx.fillStyle = "#2a2f36";
+    ctx.fillRect(20 * S, -2.2 * S, 8.2 * S, 3.2 * S);
+    ctx.fillStyle = "#d04a3c";
+    ctx.beginPath();
+    ctx.moveTo(28.2 * S, -2.2 * S);
+    ctx.lineTo(30.6 * S, -0.6 * S);
+    ctx.lineTo(28.2 * S, 1 * S);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+
+  if (wt === "sniper") {
+    ctx.fillStyle = "#2c3f53";
+    ctx.fillRect(9 * S, -2.3 * S, 18 * S, 3 * S);
+    ctx.fillStyle = "#1e2c3c";
+    ctx.fillRect(15 * S, -4 * S, 7.5 * S, 1.6 * S);
+    ctx.fillStyle = "#9fb1c4";
+    ctx.fillRect(26.8 * S, -1.65 * S, 3.2 * S, 1.7 * S);
+    return;
+  }
+
+  // Minigun (default)
+  ctx.fillStyle = "#2e3136";
+  ctx.fillRect(9.5 * S, -3.2 * S, 10 * S, 5 * S);
+  ctx.fillStyle = "#4a4f57";
+  for (let i = 0; i < 4; i++) {
+    ctx.fillRect((18 + i * 2.1) * S, (-2.2 + i * 0.1) * S, 3.5 * S, 0.95 * S);
+    ctx.fillRect((18 + i * 2.1) * S, (-0.6 + i * 0.1) * S, 3.5 * S, 0.95 * S);
+  }
+}
+
+function drawBulletSprite(ctx, b) {
+  const wt = b.weaponType || "minigun";
+  const r = Math.max(2, Number(b.radius) || 3.5);
+
+  if (wt === "shotgun") {
+    ctx.fillStyle = "#f5d28b";
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, r * 1.2, r * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,80,35,0.65)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    return;
+  }
+
+  if (wt === "rocket") {
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = "rgba(255,130,70,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 1.8, 0, r * 1.6, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6f747c";
+    ctx.fillRect(-r * 1.6, -r * 0.9, r * 2.6, r * 1.8);
+    ctx.fillStyle = "#db4d3e";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.1, 0);
+    ctx.lineTo(r * 2, -r * 0.65);
+    ctx.lineTo(r * 2, r * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (wt === "sniper") {
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const lg = ctx.createLinearGradient(-r * 3, 0, r * 3, 0);
+    lg.addColorStop(0, "#9ecbff");
+    lg.addColorStop(1, "#e6f3ff");
+    ctx.fillStyle = lg;
+    ctx.fillRect(-r * 2.8, -r * 0.45, r * 5.6, r * 0.9);
+    ctx.restore();
+    return;
+  }
+
+  // Minigun default: compact tracer round.
+  ctx.fillStyle = "#c8a050";
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffe8b0";
+  ctx.beginPath();
+  ctx.arc(b.x - r * 0.25, b.y - r * 0.25, Math.max(1, r * 0.45), 0, Math.PI * 2);
+  ctx.fill();
+}
+
 /**
  * Top-down person with a gun (~1.4x bigger, more detail).
  * Facing right (angle=0).
  */
-function drawTankSprite(ctx, hullColor, isLocal) {
+function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   const S = 1.4; // scale factor
 
   // Shadow on ground
@@ -1200,24 +1310,8 @@ function drawTankSprite(ctx, hullColor, isLocal) {
   ctx.ellipse(8.5 * S, 4.2 * S, 1.8 * S, 2 * S, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Gun body
-  ctx.fillStyle = "#3a3a3a";
-  ctx.fillRect(10 * S, -3 * S, 13 * S, 4.2 * S);
-  // Barrel
-  ctx.fillStyle = "#2a2a2a";
-  ctx.fillRect(21 * S, -2.4 * S, 4.5 * S, 3 * S);
-  // Grip
-  ctx.fillStyle = "#4a3a2a";
-  ctx.fillRect(10 * S, -3 * S, 2.5 * S, 4.2 * S);
-  // Trigger guard
-  ctx.strokeStyle = "#555";
-  ctx.lineWidth = 0.6;
-  ctx.beginPath();
-  ctx.arc(13 * S, 0.8 * S, 1.2 * S, 0, Math.PI);
-  ctx.stroke();
-  // Muzzle
-  ctx.fillStyle = "#666";
-  ctx.fillRect(25 * S, -1.6 * S, 1.5 * S, 1.5 * S);
+  // Weapon model differs per weapon type.
+  drawWeaponModel(ctx, weaponType, S);
 
   // Head
   const skinTone = "#e0b896";
@@ -1375,20 +1469,7 @@ function draw() {
   ctx.fillRect(0, 0, aw, ah);
 
   for (const b of bullets) {
-    // Small solid bullet
-    ctx.fillStyle = "#c8a050";
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffe8b0";
-    ctx.beginPath();
-    ctx.arc(b.x - 0.8, b.y - 0.8, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(100,70,30,0.5)";
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.stroke();
+    drawBulletSprite(ctx, b);
   }
 
   const enemies = state.enemies ?? [];
@@ -1399,7 +1480,7 @@ function draw() {
     ctx.save();
     ctx.translate(e.x, e.y);
     ctx.rotate(e.angle);
-    drawTankSprite(ctx, ENEMY_HULL, false);
+    drawTankSprite(ctx, ENEMY_HULL, false, e.weaponType || "minigun");
     ctx.restore();
 
     const nameY = e.y - 20;
@@ -1440,7 +1521,7 @@ function draw() {
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle);
       ctx.globalAlpha = 0.36;
-      drawTankSprite(ctx, col, localIds.has(p.id));
+      drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
       ctx.restore();
       ctx.globalAlpha = 1;
       const nameY = p.y - 26;
@@ -1457,7 +1538,7 @@ function draw() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
-    drawTankSprite(ctx, col, localIds.has(p.id));
+    drawTankSprite(ctx, col, localIds.has(p.id), p.weaponType || "minigun");
     ctx.restore();
 
     const nameY = p.y - 26;
