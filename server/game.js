@@ -36,9 +36,22 @@ const MAX_MAZE_COLS = 16;
 const MIN_MAZE_ROWS = 5;
 const MAX_MAZE_ROWS = 12;
 
-const WEAPON_TYPES = ["shotgun", "rocket", "sniper", "minigun"];
+const WEAPON_TYPES = ["pistol", "shotgun", "rocket", "sniper", "minigun", "flamethrower", "katana"];
 
 const WEAPON_PROFILES = {
+  pistol: {
+    name: "Pistol",
+    fireCooldownMs: 260,
+    magazineSize: 14,
+    reloadMs: 1350,
+    moveSpeedMult: 1.2,
+    pelletCount: 1,
+    spread: 0.035,
+    bulletSpeed: 10.5,
+    damage: 13,
+    maxBounces: 2,
+    bulletRadius: 2.6,
+  },
   shotgun: {
     name: "Shotgun",
     fireCooldownMs: 720,
@@ -94,6 +107,29 @@ const WEAPON_PROFILES = {
     damage: 14,
     maxBounces: 5,
     bulletRadius: 3.2,
+  },
+  flamethrower: {
+    name: "Flamethrower",
+    fireCooldownMs: 105,
+    magazineSize: 80,
+    reloadMs: 1700,
+    moveSpeedMult: 0.85,
+    pelletCount: 2,
+    spread: 0.62,
+    bulletSpeed: 4.3,
+    damage: 8,
+    maxBounces: 0,
+    bulletRadius: 2.7,
+    bulletLifeMs: 240,
+  },
+  katana: {
+    name: "Katana",
+    fireCooldownMs: 240,
+    usesAmmo: false,
+    moveSpeedMult: 1.35,
+    meleeRange: 34,
+    meleeArc: 0.95,
+    meleeDamage: 26,
   },
 };
 
@@ -445,6 +481,7 @@ export class GameRoom {
     this._rng = Math.random;
     this._nextEnemySlot = 0;
     this.explosions = [];
+    this.groundFires = [];
     this.dmRound = 1;
     const generated = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this.walls = generated.walls;
@@ -468,6 +505,7 @@ export class GameRoom {
     this._applyMazeFromGenerated(gen);
     this.bullets = [];
     this.explosions = [];
+    this.groundFires = [];
     this.dmRound += 1;
     for (const p of this.players.values()) {
       this._respawnTankAtRandom(p);
@@ -521,6 +559,7 @@ export class GameRoom {
     const sp = randomSpawn(this._rng, this.walls);
     const weaponType = randomWeaponType(this._rng);
     const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
+    const ammoCap = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
     this.enemies.push({
       id: `enemy-${slot}`,
       name: `Intruder ${this.enemies.length + 1}`,
@@ -534,8 +573,8 @@ export class GameRoom {
       maxHp: ENEMY_MAX_HP,
       weaponType,
       weaponName: prof.name,
-      ammo: prof.magazineSize || 1,
-      maxAmmo: prof.magazineSize || 1,
+      ammo: ammoCap,
+      maxAmmo: ammoCap,
       reloadUntil: 0,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
@@ -562,6 +601,8 @@ export class GameRoom {
   addPlayer(id, name) {
     const spawn = randomSpawn(this._rng, this.walls);
     const weaponType = randomWeaponType(this._rng);
+    const prof = WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun;
+    const ammoCap = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
     this.players.set(id, {
       id,
       name: name || `Tank ${this.players.size + 1}`,
@@ -575,8 +616,8 @@ export class GameRoom {
       maxHp: PLAYER_MAX_HP,
       score: 0,
       weaponType,
-      ammo: (WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1,
-      maxAmmo: (WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1,
+      ammo: ammoCap,
+      maxAmmo: ammoCap,
       reloadUntil: 0,
       lastFire: 0,
       respawnAt: 0,
@@ -608,6 +649,12 @@ export class GameRoom {
       magazineSize: 10,
       reloadMs: 1600,
     };
+    if (profile.usesAmmo === false) {
+      ent.maxAmmo = 0;
+      ent.ammo = 0;
+      ent.reloadUntil = 0;
+      return;
+    }
     const magSize = Math.max(1, profile.magazineSize || 1);
     if (typeof ent.maxAmmo !== "number" || ent.maxAmmo <= 0) ent.maxAmmo = magSize;
     if (typeof ent.ammo !== "number") ent.ammo = ent.maxAmmo;
@@ -749,6 +796,13 @@ export class GameRoom {
       bulletRadius: BULLET_R,
     };
 
+    if ((profile.meleeRange || 0) > 0) {
+      if (now - ent.lastFire < profile.fireCooldownMs) return;
+      ent.lastFire = now;
+      this._performMelee(ent, now, profile);
+      return;
+    }
+
     const magSize = Math.max(1, profile.magazineSize || 1);
     if (typeof ent.maxAmmo !== "number" || ent.maxAmmo <= 0) ent.maxAmmo = magSize;
     if (typeof ent.ammo !== "number") ent.ammo = ent.maxAmmo;
@@ -794,6 +848,105 @@ export class GameRoom {
     }
   }
 
+  _performMelee(ent, now, profile) {
+    const range = Math.max(8, profile.meleeRange || 24);
+    const halfArc = Math.max(0.18, (profile.meleeArc || 0.8) * 0.5);
+    const dmg = profile.meleeDamage || PLAYER_BULLET_DAMAGE;
+    const ownerIsHuman = this.players.has(ent.id);
+
+    let best = null;
+    let bestD = Infinity;
+    const consider = (target, kind) => {
+      if (!target.alive) return;
+      if (kind === "player") {
+        if (target.id === ent.id) return;
+        if (this.mode === "pve" && ownerIsHuman) return;
+      }
+      const dx = target.x - ent.x;
+      const dy = target.y - ent.y;
+      const d = Math.hypot(dx, dy);
+      if (d > TANK_R + range) return;
+      const aim = Math.atan2(dy, dx);
+      const err = Math.abs(wrapAngle(aim - ent.angle));
+      if (err > halfArc) return;
+      if (d < bestD) {
+        bestD = d;
+        best = { target, kind };
+      }
+    };
+
+    if (this.mode === "pve" && ownerIsHuman) {
+      for (const e of this.enemies) consider(e, "enemy");
+    } else {
+      for (const p of this.players.values()) consider(p, "player");
+    }
+
+    if (!best) return;
+    const killer = this.players.get(ent.id);
+    best.target.hp -= dmg;
+    if (best.kind === "player") {
+      if (best.target.hp <= 0) this._onPlayerHpDepleted(best.target, killer, now);
+      return;
+    }
+    if (best.target.hp <= 0) {
+      if (killer) killer.score += 1;
+      best.target.alive = false;
+    }
+  }
+
+  _spawnGroundFire(ownerId, x, y, power = 1) {
+    const r = 10 + power * 6;
+    const life = 26 + Math.floor(power * 8);
+    this.groundFires.push({
+      id: `${this.tick}-${Math.floor(x)}-${Math.floor(y)}-${Math.random().toString(36).slice(2, 6)}`,
+      ownerId,
+      x,
+      y,
+      r,
+      life,
+      maxLife: life,
+      dmg: 0.45 + power * 0.25,
+    });
+    if (this.groundFires.length > 240) {
+      this.groundFires.splice(0, this.groundFires.length - 240);
+    }
+  }
+
+  _applyGroundFireContact(now) {
+    if (!this.groundFires.length) return;
+    for (const f of this.groundFires) {
+      const ownerIsHuman = this.players.has(f.ownerId);
+      const killer = this.players.get(f.ownerId);
+
+      if (!(this.mode === "pve" && ownerIsHuman)) {
+        for (const p of this.players.values()) {
+          if (!p.alive) continue;
+          if (
+            p.id === f.ownerId &&
+            (this.mode === "arena" || this.mode === "pve" || this.mode === "deathmatch")
+          ) {
+            continue;
+          }
+          if (Math.hypot(p.x - f.x, p.y - f.y) > TANK_R + f.r) continue;
+          p.hp -= f.dmg;
+          if (p.hp <= 0) this._onPlayerHpDepleted(p, killer, now);
+        }
+      }
+
+      if (this.mode === "pve" && ownerIsHuman) {
+        for (const e of this.enemies) {
+          if (!e.alive) continue;
+          if (Math.hypot(e.x - f.x, e.y - f.y) > TANK_R + f.r) continue;
+          e.hp -= f.dmg;
+          if (e.hp <= 0) {
+            if (killer) killer.score += 1;
+            e.alive = false;
+          }
+        }
+      }
+    }
+  }
+
   _spawnBullet(owner, now, angle, profile) {
     const radius = profile.bulletRadius ?? BULLET_R;
     const bx = owner.x + Math.cos(angle) * (TANK_R + radius + 2);
@@ -817,6 +970,7 @@ export class GameRoom {
       damage: profile.damage ?? PLAYER_BULLET_DAMAGE,
       radius,
       weaponType: owner.weaponType || "minigun",
+      maxLifeMs: profile.bulletLifeMs || 0,
       pierceLeft: profile.pierce || 0,
       explodeOnWall: !!profile.explodeOnWall,
       splashRadius: profile.splashRadius || 0,
@@ -902,7 +1056,7 @@ export class GameRoom {
     if ("weaponType" in ent) {
       ent.weaponType = randomWeaponType(this._rng);
       const prof = WEAPON_PROFILES[ent.weaponType] || WEAPON_PROFILES.minigun;
-      ent.maxAmmo = prof.magazineSize || 1;
+      ent.maxAmmo = prof.usesAmmo === false ? 0 : (prof.magazineSize || 1);
       ent.ammo = ent.maxAmmo;
       ent.reloadUntil = 0;
     }
@@ -927,6 +1081,14 @@ export class GameRoom {
         .map((e) => ({ ...e, life: e.life - 1 }))
         .filter((e) => e.life > 0);
     }
+
+    if (this.groundFires.length > 0) {
+      this.groundFires = this.groundFires
+        .map((f) => ({ ...f, life: f.life - 1 }))
+        .filter((f) => f.life > 0);
+    }
+
+    this._applyGroundFireContact(now);
 
     if (this.mode === "pve" && this.pveIntermissionEnd > 0 && now >= this.pveIntermissionEnd) {
       this.pveIntermissionEnd = 0;
@@ -954,6 +1116,12 @@ export class GameRoom {
 
     const nextBullets = [];
     for (const b of this.bullets) {
+      if ((b.maxLifeMs || 0) > 0 && now - b.born >= b.maxLifeMs) {
+        if (b.weaponType === "flamethrower") {
+          this._spawnGroundFire(b.ownerId, b.x, b.y, 0.85);
+        }
+        continue;
+      }
       const bulletR = b.radius ?? BULLET_R;
       let x = b.x + b.vx;
       let y = b.y + b.vy;
@@ -992,6 +1160,10 @@ export class GameRoom {
       b.y = y;
       b.vx = vx;
       b.vy = vy;
+
+      if (b.weaponType === "flamethrower" && this._rng() < 0.42) {
+        this._spawnGroundFire(b.ownerId, b.x, b.y, 0.6 + this._rng() * 0.6);
+      }
 
       const ownerIsHuman = this.players.has(b.ownerId);
       if (this.mode === "pve" && ownerIsHuman) {
@@ -1090,8 +1262,8 @@ export class GameRoom {
           weaponName: prof.name,
           weaponCooldownMs: prof.fireCooldownMs,
           lastFiredAt: p.lastFire,
-          ammo: p.ammo ?? (prof.magazineSize || 1),
-          maxAmmo: p.maxAmmo ?? (prof.magazineSize || 1),
+          ammo: p.ammo ?? (prof.usesAmmo === false ? 0 : (prof.magazineSize || 1)),
+          maxAmmo: p.maxAmmo ?? (prof.usesAmmo === false ? 0 : (prof.magazineSize || 1)),
           reloadUntil: p.reloadUntil || 0,
           reloadMs: prof.reloadMs || 0,
           respawnAt: p.respawnAt || 0,
@@ -1116,6 +1288,14 @@ export class GameRoom {
         maxLife: e.maxLife,
         weaponType: e.weaponType,
       })),
+      fires: this.groundFires.map((f) => ({
+        id: f.id,
+        x: f.x,
+        y: f.y,
+        r: f.r,
+        life: f.life,
+        maxLife: f.maxLife,
+      })),
       deathEvents: this.deathEvents,
       tick: this.tick,
       arenaRespawnDelayMs: ARENA_RESPAWN_DELAY_MS,
@@ -1137,8 +1317,8 @@ export class GameRoom {
         maxHp: e.maxHp,
         weaponType: e.weaponType || "minigun",
         weaponName: (WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).name,
-        ammo: e.ammo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1),
-        maxAmmo: e.maxAmmo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1),
+        ammo: e.ammo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).usesAmmo === false ? 0 : ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1)),
+        maxAmmo: e.maxAmmo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).usesAmmo === false ? 0 : ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1)),
         reloadUntil: e.reloadUntil || 0,
       }));
     }

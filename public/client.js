@@ -470,6 +470,27 @@ function drawExplosionFx(ctx, ex) {
   ctx.fill();
 }
 
+function drawGroundFireFx(ctx, f) {
+  const life = Math.max(0, Number(f.life) || 0);
+  const maxLife = Math.max(1, Number(f.maxLife) || 1);
+  const t = life / maxLife;
+  const r = Number(f.r) || 10;
+
+  const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r * 1.8);
+  g.addColorStop(0, `rgba(255,240,170,${0.34 * t + 0.2})`);
+  g.addColorStop(0.5, `rgba(255,140,58,${0.42 * t + 0.2})`);
+  g.addColorStop(1, "rgba(120,30,0,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(f.x, f.y, r * 1.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = `rgba(255,105,38,${0.22 * t + 0.12})`;
+  ctx.beginPath();
+  ctx.arc(f.x + r * 0.12, f.y - r * 0.08, r * 1.05, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function playFromPool(pool, index) {
   const audio = pool[index];
   audio.currentTime = 0;
@@ -1088,6 +1109,8 @@ function hpBarClass(ratio) {
 
 function weaponLabelColor(weaponType) {
   switch (weaponType) {
+    case "pistol":
+      return "#ffd166";
     case "shotgun":
       return "#f4b25f";
     case "rocket":
@@ -1096,6 +1119,10 @@ function weaponLabelColor(weaponType) {
       return "#74c9ff";
     case "minigun":
       return "#8ee66b";
+    case "flamethrower":
+      return "#ff8a3c";
+    case "katana":
+      return "#f3b5d7";
     default:
       return "#d0d7de";
   }
@@ -1212,6 +1239,17 @@ function drawPlayerHealthBar(ctx, cx, topY, hp, maxHp) {
 }
 
 function drawAmmoStatus(ctx, cx, topY, ammo, maxAmmo, reloadUntil, now) {
+  if ((Number(maxAmmo) || 0) <= 0) {
+    const msg = "Melee";
+    ctx.font = "600 10px Segoe UI, system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.strokeText(msg, cx + 29, topY + 4.5);
+    ctx.fillStyle = "#ffd2e9";
+    ctx.fillText(msg, cx + 29, topY + 4.5);
+    return;
+  }
   const maxA = Math.max(1, Number(maxAmmo) || 1);
   const curA = Math.max(0, Math.min(maxA, Number(ammo) || 0));
   const ru = Number(reloadUntil) || 0;
@@ -1228,6 +1266,8 @@ function drawAmmoStatus(ctx, cx, topY, ammo, maxAmmo, reloadUntil, now) {
 
 function weaponOutfitTone(weaponType, fallbackHex) {
   switch (weaponType) {
+    case "pistol":
+      return "#8a6b45";
     case "shotgun":
       return "#9f6b3d";
     case "rocket":
@@ -1236,6 +1276,10 @@ function weaponOutfitTone(weaponType, fallbackHex) {
       return "#3c6e9e";
     case "minigun":
       return "#5a616b";
+    case "flamethrower":
+      return "#9a4f2d";
+    case "katana":
+      return "#7a5c8f";
     default:
       return fallbackHex;
   }
@@ -1243,6 +1287,18 @@ function weaponOutfitTone(weaponType, fallbackHex) {
 
 function drawWeaponModel(ctx, weaponType, S) {
   const wt = weaponType || "minigun";
+
+  if (wt === "pistol") {
+    ctx.fillStyle = "#4a4a4a";
+    ctx.fillRect(10.5 * S, -1.8 * S, 8.3 * S, 2.4 * S);
+    ctx.fillStyle = "#2e2e2e";
+    ctx.fillRect(12.6 * S, -0.2 * S, 2.4 * S, 3.2 * S);
+    ctx.fillStyle = "#8f6d41";
+    ctx.fillRect(12.9 * S, 1.8 * S, 1.8 * S, 1.7 * S);
+    ctx.fillStyle = "#c8ced6";
+    ctx.fillRect(18.5 * S, -1.2 * S, 2.6 * S, 1.2 * S);
+    return;
+  }
 
   if (wt === "shotgun") {
     ctx.fillStyle = "#8f5b2e";
@@ -1282,6 +1338,40 @@ function drawWeaponModel(ctx, weaponType, S) {
     ctx.fillRect(26.8 * S, -1.65 * S, 3.2 * S, 1.7 * S);
     ctx.fillStyle = "#7ec8ff";
     ctx.fillRect(17.4 * S, -3.6 * S, 1.8 * S, 0.8 * S);
+    return;
+  }
+
+  if (wt === "flamethrower") {
+    ctx.fillStyle = "#5a5f66";
+    ctx.fillRect(9.2 * S, -2.8 * S, 10.8 * S, 4.6 * S);
+    ctx.fillStyle = "#2f3338";
+    ctx.fillRect(19.6 * S, -1.8 * S, 7.6 * S, 2.8 * S);
+    ctx.fillStyle = "#c6722f";
+    ctx.fillRect(11.4 * S, -1 * S, 2.8 * S, 2 * S);
+    ctx.fillStyle = "#ff9f43";
+    ctx.beginPath();
+    ctx.moveTo(27.2 * S, -1.8 * S);
+    ctx.lineTo(30.2 * S, -0.5 * S);
+    ctx.lineTo(27.2 * S, 0.8 * S);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+
+  if (wt === "katana") {
+    ctx.fillStyle = "#2b2f36";
+    ctx.fillRect(9.8 * S, -0.8 * S, 3.8 * S, 1.6 * S);
+    ctx.fillStyle = "#d9dce2";
+    ctx.fillRect(13.2 * S, -0.55 * S, 14.8 * S, 1.1 * S);
+    ctx.fillStyle = "#ffd5a3";
+    ctx.fillRect(11.4 * S, -1.4 * S, 0.85 * S, 2.8 * S);
+    ctx.fillStyle = "#f2f6ff";
+    ctx.beginPath();
+    ctx.moveTo(28 * S, -0.55 * S);
+    ctx.lineTo(30.5 * S, 0);
+    ctx.lineTo(28 * S, 0.55 * S);
+    ctx.closePath();
+    ctx.fill();
     return;
   }
 
@@ -1332,6 +1422,20 @@ function drawBulletSprite(ctx, b) {
     return;
   }
 
+  if (wt === "pistol") {
+    drawTrail(Math.max(8, r * 4.1), Math.max(1.05, r * 0.75), 0.14);
+    const ang = Math.atan2(vy || 0, vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = "#f2d39b";
+    ctx.fillRect(-r * 1.4, -r * 0.48, r * 2.8, r * 0.96);
+    ctx.fillStyle = "rgba(255,242,213,0.9)";
+    ctx.fillRect(-r * 0.6, -r * 0.22, r * 1.2, r * 0.44);
+    ctx.restore();
+    return;
+  }
+
   if (wt === "rocket") {
     drawTrail(Math.max(10, r * 5), Math.max(1.5, r * 1), 0.2);
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
@@ -1378,6 +1482,34 @@ function drawBulletSprite(ctx, b) {
     ctx.beginPath();
     ctx.arc(b.x, b.y, Math.max(1, r * 0.65), 0, Math.PI * 2);
     ctx.fill();
+    return;
+  }
+
+  if (wt === "flamethrower") {
+    drawTrail(Math.max(6, r * 3.2), Math.max(1.5, r * 1.15), 0.22);
+    const core = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r * 2.2);
+    core.addColorStop(0, "rgba(255,246,190,0.95)");
+    core.addColorStop(0.45, "rgba(255,161,64,0.88)");
+    core.addColorStop(1, "rgba(196,64,18,0)");
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, r * 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (Math.random() < 0.65) {
+      pushParticle({
+        x: b.x - ux * (r * 0.9),
+        y: b.y - uy * (r * 0.9),
+        vx: (Math.random() * 2 - 1) * 0.25,
+        vy: (Math.random() * 2 - 1) * 0.25,
+        life: 8 + Math.floor(Math.random() * 5),
+        maxLife: 13,
+        size: 1.2 + Math.random() * 1.4,
+        color: Math.random() < 0.55 ? "rgba(255,170,70,0.9)" : "rgba(255,95,45,0.85)",
+        drag: 0.9,
+        gravity: -0.002,
+      });
+    }
     return;
   }
 
@@ -1643,6 +1775,10 @@ function draw() {
   vignette.addColorStop(1, "rgba(30,15,0,0.3)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
+
+  for (const f of state.fires || []) {
+    drawGroundFireFx(ctx, f);
+  }
 
   for (const ex of state.explosions || []) {
     drawExplosionFx(ctx, ex);
