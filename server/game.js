@@ -35,6 +35,8 @@ const MIN_MAZE_COLS = 6;
 const MAX_MAZE_COLS = 16;
 const MIN_MAZE_ROWS = 5;
 const MAX_MAZE_ROWS = 12;
+/** Time between powerup spawns (ms) */
+const POWERUP_SPAWN_INTERVAL_MS = 15000;
 
 const WEAPON_TYPES = ["pistol", "shotgun", "rocket", "sniper", "minigun", "flamethrower", "katana"];
 
@@ -140,6 +142,41 @@ const WEAPON_PROFILES = {
     meleeDamage: 320,
   },
 };
+
+const POWERUP_TYPES = ["ghost", "rapid_fire", "piercing", "health", "death_ray"];
+
+const POWERUP_PROFILES = {
+  ghost: {
+    name: "Ghost",
+    durationMs: 8000,
+    effect: "walk_through_walls",
+  },
+  rapid_fire: {
+    name: "Rapid Fire",
+    durationMs: 10000,
+    effect: "faster_firing",
+    fireRateMult: 0.4,
+  },
+  piercing: {
+    name: "Piercing",
+    durationMs: 12000,
+    effect: "bullets_through_walls",
+  },
+  health: {
+    name: "Health Pack",
+    instant: true,
+    healAmount: 50,
+  },
+  death_ray: {
+    name: "Death Ray",
+    durationMs: 15000,
+    effect: "instant_kill_bullets",
+  },
+};
+
+function randomPowerupType(rng) {
+  return POWERUP_TYPES[Math.floor(rng() * POWERUP_TYPES.length)];
+}
 
 function randomWeaponType(rng) {
   return WEAPON_TYPES[Math.floor(rng() * WEAPON_TYPES.length)];
@@ -493,10 +530,14 @@ export class GameRoom {
     this.katanaSwings = [];
     this.nextSwingId = 1;
     this.dmRound = 1;
+    this.powerups = [];
+    this.nextPowerupId = 1;
+    this.nextPowerupSpawn = 0; // Will be set in step()
     const generated = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this.walls = generated.walls;
     this.maze = generated.maze;
     this.enemies = [];
+    this._spawnPowerups();
     /** PvE waves (PvE only). */
     this.pveWave = 1;
     /** When > 0, timestamp (ms) until next wave spawns. */
@@ -517,6 +558,8 @@ export class GameRoom {
     this.explosions = [];
     this.groundFires = [];
     this.katanaSwings = [];
+    this.powerups = [];
+    this.nextPowerupSpawn = 0; // Reset spawn timer
     this.dmRound += 1;
     for (const p of this.players.values()) {
       this._respawnTankAtRandom(p);
@@ -556,6 +599,26 @@ export class GameRoom {
       return;
     }
     this._respawnTankAtRandom(p);
+  }
+
+  _spawnPowerups() {
+    // Spawn initial powerups (3-6)
+    const count = 3 + Math.floor(this._rng() * 4);
+    for (let i = 0; i < count; i++) {
+      this._spawnSinglePowerup();
+    }
+  }
+
+  _spawnSinglePowerup() {
+    const sp = randomSpawn(this._rng, this.walls);
+    const type = randomPowerupType(this._rng);
+    this.powerups.push({
+      id: this.nextPowerupId++,
+      type,
+      x: sp.x,
+      y: sp.y,
+      radius: 12,
+    });
   }
 
   _pveEnemiesToSpawnThisWave() {
@@ -649,6 +712,7 @@ export class GameRoom {
       reloadUntil: 0,
       lastFire: 0,
       respawnAt: 0,
+      powerups: [],
       input: { forward: false, back: false, left: false, right: false, fire: false, reload: false },
     });
     this._pveMaybeSpawnInitialWave();
@@ -759,6 +823,43 @@ export class GameRoom {
     return input;
   }
 
+  _checkPowerupPickup(player, now) {
+    if (!player.alive) return;
+
+    const nextPowerups = [];
+    for (const powerup of this.powerups) {
+      const d = Math.hypot(player.x - powerup.x, player.y - powerup.y);
+      if (d < TANK_R + powerup.radius) {
+        // Player picked up powerup
+        this._applyPowerupEffect(player, powerup.type, now);
+      } else {
+        nextPowerups.push(powerup);
+      }
+    }
+    this.powerups = nextPowerups;
+  }
+
+  _applyPowerupEffect(player, type, now) {
+    const profile = POWERUP_PROFILES[type];
+    if (!profile) return;
+
+    if (profile.instant) {
+      if (type === "health") {
+        player.hp = Math.min(player.maxHp, player.hp + profile.healAmount);
+      }
+      return;
+    }
+
+    // Remove existing powerup of same type
+    player.powerups = player.powerups.filter(p => p.type !== type);
+
+    // Add new powerup
+    player.powerups.push({
+      type,
+      expiresAt: now + profile.durationMs,
+    });
+  }
+
   _applyTankPhysics(ent, input) {
     if (!ent.alive) return;
 
@@ -793,15 +894,20 @@ export class GameRoom {
     let nx = ent.x + ent.vx;
     let ny = ent.y + ent.vy;
 
-    for (const w of this.walls) {
-      const res = resolveCircleRect(nx, ny, TANK_R, w);
-      if (res) {
-        nx = res.cx;
-        ny = res.cy;
-        const dot = ent.vx * res.nx + ent.vy * res.ny;
-        if (dot < 0) {
-          ent.vx -= 2 * dot * res.nx;
-          ent.vy -= 2 * dot * res.ny;
+    // Check for ghost powerup (walk through walls)
+    const hasGhost = ent.powerups?.some(p => p.type === "ghost" && p.expiresAt > now);
+
+    if (!hasGhost) {
+      for (const w of this.walls) {
+        const res = resolveCircleRect(nx, ny, TANK_R, w);
+        if (res) {
+          nx = res.cx;
+          ny = res.cy;
+          const dot = ent.vx * res.nx + ent.vy * res.ny;
+          if (dot < 0) {
+            ent.vx -= 2 * dot * res.nx;
+            ent.vy -= 2 * dot * res.ny;
+          }
         }
       }
     }
@@ -849,6 +955,14 @@ export class GameRoom {
     }
 
     if (now - ent.lastFire < profile.fireCooldownMs) return;
+
+    // Check for rapid fire powerup
+    const rapidFirePowerup = ent.powerups?.find(p => p.type === "rapid_fire" && p.expiresAt > now);
+    if (rapidFirePowerup) {
+      const fireRateMult = POWERUP_PROFILES.rapid_fire.fireRateMult;
+      const adjustedCooldown = profile.fireCooldownMs * fireRateMult;
+      if (now - ent.lastFire < adjustedCooldown) return;
+    }
 
     let fired = false;
 
@@ -1047,6 +1161,9 @@ export class GameRoom {
       explodeOnWall: !!profile.explodeOnWall,
       splashRadius: profile.splashRadius || 0,
       splashDamage: profile.splashDamage || 0,
+      // Check for powerup effects
+      piercing: owner.powerups?.some(p => p.type === "piercing" && p.expiresAt > now),
+      deathRay: owner.powerups?.some(p => p.type === "death_ray" && p.expiresAt > now),
     });
     return true;
   }
@@ -1143,6 +1260,17 @@ export class GameRoom {
   step(now) {
     this.tick++;
 
+    // Initialize powerup spawn timer if not set
+    if (this.nextPowerupSpawn === 0) {
+      this.nextPowerupSpawn = now + POWERUP_SPAWN_INTERVAL_MS;
+    }
+
+    // Spawn powerups periodically
+    if (now >= this.nextPowerupSpawn) {
+      this._spawnSinglePowerup();
+      this.nextPowerupSpawn = now + POWERUP_SPAWN_INTERVAL_MS;
+    }
+
     for (const p of this.players.values()) {
       if (!p.alive && (p.respawnAt || 0) > 0 && now >= p.respawnAt) {
         this._respawnTankAtRandom(p);
@@ -1177,6 +1305,7 @@ export class GameRoom {
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       this._applyTankPhysics(p, p.input);
+      this._checkPowerupPickup(p, now);
       this._tickReloadState(p, now, !!p.input.reload);
       if (p.input.fire) this._tryFire(p, now);
     }
@@ -1213,6 +1342,13 @@ export class GameRoom {
         for (const w of this.walls) {
           const res = resolveCircleRect(x, y, bulletR, w);
           if (!res) continue;
+          // Piercing bullets pass through walls
+          if (b.piercing) {
+            // Just update position, don't bounce
+            x = res.cx;
+            y = res.cy;
+            continue;
+          }
           x = res.cx;
           y = res.cy;
           const dot = vx * res.nx + vy * res.ny;
@@ -1250,7 +1386,8 @@ export class GameRoom {
           const d = Math.hypot(e.x - b.x, e.y - b.y);
           if (d < TANK_R + bulletR - 0.5) {
             const killer = this.players.get(b.ownerId);
-            e.hp -= b.damage ?? PLAYER_BULLET_DAMAGE;
+            const damage = b.deathRay ? e.hp : (b.damage ?? PLAYER_BULLET_DAMAGE);
+            e.hp -= damage;
             if (e.hp <= 0) {
               if (killer) killer.score += 1;
               e.alive = false;
@@ -1282,7 +1419,8 @@ export class GameRoom {
             const d = Math.hypot(p.x - b.x, p.y - b.y);
             if (d < TANK_R + bulletR - 0.5) {
               const killer = this.players.get(b.ownerId);
-              p.hp -= b.damage ?? PLAYER_BULLET_DAMAGE;
+              const damage = b.deathRay ? p.hp : (b.damage ?? PLAYER_BULLET_DAMAGE);
+              p.hp -= damage;
               if (b.explodeOnWall) {
                 this._spawnExplosion(b.x, b.y, b.weaponType);
                 const splashOpts =
@@ -1396,6 +1534,13 @@ export class GameRoom {
         range: s.range,
         side: s.side,
         endsAt: s.endsAt,
+      })),
+      powerups: this.powerups.map((p) => ({
+        id: p.id,
+        type: p.type,
+        x: p.x,
+        y: p.y,
+        radius: p.radius,
       })),
       deathEvents: this.deathEvents,
       tick: this.tick,
