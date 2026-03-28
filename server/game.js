@@ -386,45 +386,8 @@ export class GameRoom {
     this.nextBulletId = 1;
     this.tick = 0;
     this._rng = Math.random;
-<<<<<<< HEAD
     this.walls = generateMaze(this._rng);
     this.decorations = generateDecorations(this._rng, this.walls, 18);
-=======
-    this._nextEnemySlot = 0;
-    const generated = generateMaze(this._rng);
-    this.walls = generated.walls;
-    this.maze = generated.maze;
-    this.enemies = [];
-  }
-
-  _desiredEnemyCount() {
-    return Math.min(ENEMY_CAP, ENEMY_BASE_COUNT + ENEMY_PER_HUMAN * Math.max(1, this.players.size));
-  }
-
-  _spawnEnemyUnit() {
-    const slot = this._nextEnemySlot++;
-    const sp = randomSpawn(this._rng, this.walls);
-    this.enemies.push({
-      id: `enemy-${slot}`,
-      name: `Intruder ${this.enemies.length + 1}`,
-      x: sp.x,
-      y: sp.y,
-      angle: this._rng() * Math.PI * 2,
-      vx: 0,
-      vy: 0,
-      alive: true,
-      lastFire: 0,
-      _pathAge: ENEMY_PATH_REPLAN,
-      _lastPath: null,
-      input: { forward: false, back: false, left: false, right: false, fire: false },
-    });
-  }
-
-  _syncEnemyCount() {
-    if (this.mode !== "pve") return;
-    const want = this._desiredEnemyCount();
-    while (this.enemies.length < want) this._spawnEnemyUnit();
->>>>>>> master
   }
 
   addPlayer(id, name) {
@@ -657,7 +620,6 @@ export class GameRoom {
       b.vx = vx;
       b.vy = vy;
 
-<<<<<<< HEAD
       // Bullet hits decorations
       for (let di = this.decorations.length - 1; di >= 0; di--) {
         const dec = this.decorations[di];
@@ -687,34 +649,6 @@ export class GameRoom {
           p.vy = 0;
           p.alive = true;
           break;
-=======
-      if (this.mode === "pve" && !isEnemyOwnerId(b.ownerId)) {
-        for (const e of this.enemies) {
-          if (!e.alive) continue;
-          const d = Math.hypot(e.x - b.x, e.y - b.y);
-          if (d < TANK_R + BULLET_R - 0.5) {
-            const killer = this.players.get(b.ownerId);
-            if (killer) killer.score += 1;
-            dead = true;
-            this._respawnTankAtRandom(e);
-            break;
-          }
-        }
-      }
-
-      if (!dead) {
-        for (const p of this.players.values()) {
-          if (!p.alive) continue;
-          if (p.id === b.ownerId && now - b.born < BULLET_OWNER_GRACE_MS) continue;
-          const d = Math.hypot(p.x - b.x, p.y - b.y);
-          if (d < TANK_R + BULLET_R - 0.5) {
-            const killer = this.players.get(b.ownerId);
-            if (killer && killer.id !== p.id) killer.score += 1;
-            dead = true;
-            this._respawnTankAtRandom(p);
-            break;
-          }
->>>>>>> master
         }
       }
 
