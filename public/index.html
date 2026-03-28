@@ -7,12 +7,61 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div id="ui">
-      <h1>Tank Arena</h1>
-      <p class="hint">WASD / arrows — move &amp; turn · Space — fire · Open another tab to play local multiplayer</p>
-      <div id="scores"></div>
+    <main id="screen-lobby" class="screen" aria-label="Join game">
+      <div class="lobby-card">
+        <h1 class="lobby-title">Tank Arena</h1>
+        <p class="lobby-tagline">
+          Everyone uses the <strong>same site address</strong> (e.g. your LAN IP). A room code picks which match you
+          join — no need to share raw IPs for the game itself.
+        </p>
+
+        <label class="field-label" for="name-input">Display name</label>
+        <input
+          id="name-input"
+          class="field-input"
+          type="text"
+          maxlength="24"
+          autocomplete="username"
+          placeholder="Your name"
+        />
+
+        <label class="field-label" for="room-input">Room code</label>
+        <p class="field-hint">Leave empty to <strong>create</strong> a new room, or enter a 6-character code to <strong>join</strong>.</p>
+        <input
+          id="room-input"
+          class="field-input room-input"
+          type="text"
+          maxlength="6"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="e.g. K7P4M2"
+        />
+
+        <fieldset class="mode-fieldset">
+          <legend class="mode-legend">Game mode</legend>
+          <div id="mode-options" class="mode-options"></div>
+        </fieldset>
+
+        <p id="lobby-error" class="lobby-error" role="alert" hidden></p>
+
+        <button type="button" id="btn-play" class="btn-primary">Play</button>
+      </div>
+    </main>
+
+    <div id="screen-game" class="screen hidden">
+      <div id="ui">
+        <div id="room-hud" class="room-hud hidden">
+          <span class="room-hud-label">Room</span>
+          <code id="room-code-display" class="room-code-display"></code>
+          <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
+          <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
+        </div>
+        <p class="hint">WASD / arrows — move &amp; turn · Space — fire · Friends: same URL as you, then enter this room code</p>
+        <div id="scores"></div>
+      </div>
+      <canvas id="c" width="900" height="640"></canvas>
     </div>
-    <canvas id="c" width="900" height="640"></canvas>
+
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/client.js"></script>
   </body>

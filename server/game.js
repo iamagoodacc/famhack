@@ -1,9 +1,13 @@
 /**
  * Server-authoritative Tank Trouble–style arena: walls, tanks, bouncing bullets.
+ * Interior layout: grid maze from recursive backtracker (classic orthogonal maze).
  */
 
-const ARENA_W = 900;
-const ARENA_H = 640;
+export const ARENA_W = 900;
+export const ARENA_H = 640;
+
+const BORDER = 16;
+const WALL_T = 16;
 const TANK_R = 14;
 const BULLET_R = 4;
 const BULLET_SPEED = 9;
@@ -15,18 +19,100 @@ const FIRE_COOLDOWN_MS = 450;
 const MAX_BOUNCES = 12;
 const BULLET_OWNER_GRACE_MS = 180;
 
-/** Axis-aligned walls (world coords). */
-export const WALLS = [
-  { x: 0, y: 0, w: ARENA_W, h: 16 },
-  { x: 0, y: ARENA_H - 16, w: ARENA_W, h: 16 },
-  { x: 0, y: 0, w: 16, h: ARENA_H },
-  { x: ARENA_W - 16, y: 0, w: 16, h: ARENA_H },
-  { x: 180, y: 120, w: 16, h: 400 },
-  { x: ARENA_W - 196, y: 120, w: 16, h: 400 },
-  { x: 320, y: 80, w: 260, h: 16 },
-  { x: 320, y: ARENA_H - 96, w: 260, h: 16 },
-  { x: 420, y: 200, w: 16, h: 240 },
-];
+/** Outer bounds only (always present). */
+function outerBorderWalls() {
+  return [
+    { x: 0, y: 0, w: ARENA_W, h: BORDER },
+    { x: 0, y: ARENA_H - BORDER, w: ARENA_W, h: BORDER },
+    { x: 0, y: 0, w: BORDER, h: ARENA_H },
+    { x: ARENA_W - BORDER, y: 0, w: BORDER, h: ARENA_H },
+  ];
+}
+
+function shuffleInPlace(arr, rng) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+/**
+ * Perfect orthogonal maze (recursive backtracker / DFS): one spanning tree of the
+ * cell graph, so every cell is reachable and there are no isolated rooms.
+ */
+function generateMaze(rng) {
+  const walls = outerBorderWalls();
+  const innerX = BORDER;
+  const innerY = BORDER;
+  const innerW = ARENA_W - 2 * BORDER;
+  const innerH = ARENA_H - 2 * BORDER;
+
+  const cols = 17;
+  const rows = 12;
+  const cellW = innerW / cols;
+  const cellH = innerH / rows;
+
+  /** Vertical segments between column i and i+1 (length cols-1 x rows). */
+  const vert = Array.from({ length: cols - 1 }, () => Array(rows).fill(true));
+  /** Horizontal segments between row j and j+1 (length cols x rows-1). */
+  const horiz = Array.from({ length: cols }, () => Array(rows - 1).fill(true));
+
+  const visited = Array.from({ length: cols }, () => Array(rows).fill(false));
+  const si = Math.floor(rng() * cols);
+  const sj = Math.floor(rng() * rows);
+  visited[si][sj] = true;
+  const stack = [[si, sj]];
+
+  while (stack.length) {
+    const [i, j] = stack[stack.length - 1];
+    const next = [];
+    if (j > 0 && !visited[i][j - 1]) next.push({ dir: "N", ni: i, nj: j - 1 });
+    if (j < rows - 1 && !visited[i][j + 1]) next.push({ dir: "S", ni: i, nj: j + 1 });
+    if (i > 0 && !visited[i - 1][j]) next.push({ dir: "W", ni: i - 1, nj: j });
+    if (i < cols - 1 && !visited[i + 1][j]) next.push({ dir: "E", ni: i + 1, nj: j });
+
+    shuffleInPlace(next, rng);
+
+    let moved = false;
+    for (const step of next) {
+      if (step.dir === "N") horiz[i][j - 1] = false;
+      else if (step.dir === "S") horiz[i][j] = false;
+      else if (step.dir === "E") vert[i][j] = false;
+      else if (step.dir === "W") vert[i - 1][j] = false;
+      visited[step.ni][step.nj] = true;
+      stack.push([step.ni, step.nj]);
+      moved = true;
+      break;
+    }
+    if (!moved) stack.pop();
+  }
+
+  const half = WALL_T / 2;
+  for (let i = 0; i < cols - 1; i++) {
+    for (let j = 0; j < rows; j++) {
+      if (!vert[i][j]) continue;
+      walls.push({
+        x: innerX + (i + 1) * cellW - half,
+        y: innerY + j * cellH,
+        w: WALL_T,
+        h: cellH,
+      });
+    }
+  }
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows - 1; j++) {
+      if (!horiz[i][j]) continue;
+      walls.push({
+        x: innerX + i * cellW,
+        y: innerY + (j + 1) * cellH - half,
+        w: cellW,
+        h: WALL_T,
+      });
+    }
+  }
+
+  return walls;
+}
 
 function circleRectOverlap(cx, cy, r, rect) {
   const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
@@ -66,12 +152,12 @@ function resolveCircleRect(cx, cy, r, rect) {
   };
 }
 
-function randomSpawn(rng) {
-  for (let attempt = 0; attempt < 40; attempt++) {
+function randomSpawn(rng, walls) {
+  for (let attempt = 0; attempt < 55; attempt++) {
     const x = 80 + rng() * (ARENA_W - 160);
     const y = 80 + rng() * (ARENA_H - 160);
     let ok = true;
-    for (const w of WALLS) {
+    for (const w of walls) {
       if (circleRectOverlap(x, y, TANK_R + 4, w)) {
         ok = false;
         break;
@@ -89,10 +175,11 @@ export class GameRoom {
     this.nextBulletId = 1;
     this.tick = 0;
     this._rng = Math.random;
+    this.walls = generateMaze(this._rng);
   }
 
   addPlayer(id, name) {
-    const spawn = randomSpawn(this._rng);
+    const spawn = randomSpawn(this._rng, this.walls);
     this.players.set(id, {
       id,
       name: name || `Tank ${this.players.size + 1}`,
@@ -130,7 +217,7 @@ export class GameRoom {
     const bx = p.x + Math.cos(p.angle) * (TANK_R + BULLET_R + 2);
     const by = p.y + Math.sin(p.angle) * (TANK_R + BULLET_R + 2);
     let blocked = false;
-    for (const w of WALLS) {
+    for (const w of this.walls) {
       if (circleRectOverlap(bx, by, BULLET_R, w)) {
         blocked = true;
         break;
@@ -182,7 +269,7 @@ export class GameRoom {
       let nx = p.x + p.vx;
       let ny = p.y + p.vy;
 
-      for (const w of WALLS) {
+      for (const w of this.walls) {
         const res = resolveCircleRect(nx, ny, TANK_R, w);
         if (res) {
           nx = res.cx;
@@ -211,7 +298,7 @@ export class GameRoom {
       let wallGuard = 0;
       while (wallGuard++ < 8 && !dead) {
         let hitWall = false;
-        for (const w of WALLS) {
+        for (const w of this.walls) {
           const res = resolveCircleRect(x, y, BULLET_R, w);
           if (!res) continue;
           x = res.cx;
@@ -245,7 +332,7 @@ export class GameRoom {
           const killer = this.players.get(b.ownerId);
           if (killer && killer.id !== p.id) killer.score += 1;
           dead = true;
-          const sp = randomSpawn(this._rng);
+          const sp = randomSpawn(this._rng, this.walls);
           p.x = sp.x;
           p.y = sp.y;
           p.angle = this._rng() * Math.PI * 2;
@@ -264,7 +351,7 @@ export class GameRoom {
   getSnapshot() {
     return {
       arena: { w: ARENA_W, h: ARENA_H },
-      walls: WALLS,
+      walls: this.walls,
       players: Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,
