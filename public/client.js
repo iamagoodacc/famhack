@@ -40,7 +40,7 @@ const STORAGE_MODE = "famhack_mode";
 const STORAGE_ROOM = "famhack_room";
 const STORAGE_LOCAL = "famhack_local_players";
 const STORAGE_KEYBINDS = "famhack_keybinds_v1";
-const BIND_ACTIONS = ["forward", "back", "left", "right", "fire"];
+const BIND_ACTIONS = ["forward", "back", "left", "right", "fire", "reload"];
 
 const ROOM_CODE_LEN = 6;
 
@@ -83,15 +83,16 @@ let currentRoomCode = null;
 let couchSlavesSpawned = false;
 
 const COUCH_BINDINGS = [
-  { forward: ["KeyW"], back: ["KeyS"], left: ["KeyA"], right: ["KeyD"], fire: ["Space"] },
-  { forward: ["ArrowUp"], back: ["ArrowDown"], left: ["ArrowLeft"], right: ["ArrowRight"], fire: ["Enter"] },
-  { forward: ["KeyI"], back: ["KeyK"], left: ["KeyJ"], right: ["KeyL"], fire: ["Slash"] },
+  { forward: ["KeyW"], back: ["KeyS"], left: ["KeyA"], right: ["KeyD"], fire: ["Space"], reload: ["KeyR"] },
+  { forward: ["ArrowUp"], back: ["ArrowDown"], left: ["ArrowLeft"], right: ["ArrowRight"], fire: ["Enter"], reload: ["ShiftRight"] },
+  { forward: ["KeyI"], back: ["KeyK"], left: ["KeyJ"], right: ["KeyL"], fire: ["Slash"], reload: ["Semicolon"] },
   {
     forward: ["Numpad8"],
     back: ["Numpad5"],
     left: ["Numpad4"],
     right: ["Numpad6"],
     fire: ["Numpad0", "NumpadEnter"],
+    reload: ["NumpadDecimal"],
   },
 ];
 
@@ -101,6 +102,7 @@ const SOLO_BINDING = {
   left: ["KeyA", "ArrowLeft"],
   right: ["KeyD", "ArrowRight"],
   fire: ["Space"],
+  reload: ["KeyR"],
 };
 
 const keybindCache = new Map();
@@ -114,6 +116,7 @@ function cloneBinding(b) {
     left: [...b.left],
     right: [...b.right],
     fire: [...b.fire],
+    reload: [...b.reload],
   };
 }
 
@@ -260,11 +263,11 @@ window.addEventListener(
   true,
 );
 
-/** @type {{ forward: boolean; back: boolean; left: boolean; right: boolean; fire: boolean }[]} */
+/** @type {{ forward: boolean; back: boolean; left: boolean; right: boolean; fire: boolean; reload: boolean }[]} */
 let keysBySlot = [];
 
 function freshKeyState() {
-  return { forward: false, back: false, left: false, right: false, fire: false };
+  return { forward: false, back: false, left: false, right: false, fire: false, reload: false };
 }
 
 function initKeysSlots() {
@@ -688,6 +691,7 @@ function setKeyOnSlots(code, down) {
     if (b.left.includes(code)) keysBySlot[slot].left = down;
     if (b.right.includes(code)) keysBySlot[slot].right = down;
     if (b.fire.includes(code)) keysBySlot[slot].fire = down;
+    if (b.reload.includes(code)) keysBySlot[slot].reload = down;
   }
 }
 
@@ -1062,13 +1066,6 @@ if (params.get("play") === "1" && quickName && quickModeDef && roomOkForAutoplay
   queueMicrotask(() => startFromLobby());
 }
 
-function reloadSpinHtml(clock, lastFiredAt, weaponCooldownMs) {
-  const cd = Number(weaponCooldownMs) || 0;
-  const last = Number(lastFiredAt) || 0;
-  if (!last || !cd || clock >= last + cd) return "";
-  return '<span class="lb-spin" title="Weapon cooling down">&#x21BB;</span>';
-}
-
 function statusForLeaderboard(snap, p, clock) {
   if (snap.mode === "arena" && !p.alive && (p.respawnAt || 0) > clock) {
     const sec = Math.max(1, Math.ceil((p.respawnAt - clock) / 1000));
@@ -1137,7 +1134,6 @@ function renderLeaderboard(snap) {
       const hp = Math.max(0, Math.min(maxHp, Number(p.hp) ?? maxHp));
       const ratio = hp / maxHp;
       const pct = Math.round(ratio * 100);
-      const spin = reloadSpinHtml(clock, p.lastFiredAt, p.weaponCooldownMs);
       const st = statusForLeaderboard(snap, p, clock);
       const stCell = st ? `<span class="lb-st">${escapeHtml(st)}</span>` : "—";
       const weapon = p.weaponName
@@ -1145,7 +1141,7 @@ function renderLeaderboard(snap) {
         : "";
       return `<tr class="${youCls}">
   <td class="lb-rank">${rank}</td>
-  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}${weapon}</td>
+  <td class="lb-name"><span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}${weapon}</td>
   <td class="lb-score">${p.score ?? 0}</td>
   <td class="lb-hp"><div class="lb-hp-bar ${hpBarClass(ratio)}" style="width:${pct}%"></div></td>
   <td class="lb-status">${stCell}</td>
@@ -1212,25 +1208,34 @@ function drawPlayerHealthBar(ctx, cx, topY, hp, maxHp) {
   ctx.strokeRect(x + 0.25, topY + 0.25, w - 0.5, hBar - 0.5);
 }
 
-/** Spinning arc beside the player name while weapon cooldown is active. */
-function drawReloadSpinner(ctx, cx, nameY, name, now, lastFiredAt, weaponCooldownMs) {
-  const cd = Number(weaponCooldownMs) || 0;
-  const last = Number(lastFiredAt) || 0;
-  if (!last || !cd || now >= last + cd) return;
-  ctx.save();
-  ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
-  const tw = ctx.measureText(name).width;
-  const sx = cx + tw / 2 + 9;
-  const sy = nameY - 6;
-  const rot = (now / 150) % (Math.PI * 2);
-  ctx.translate(sx, sy);
-  ctx.rotate(rot * 1.2);
-  ctx.strokeStyle = "#7dd3fc";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(0, 0, 5, 0.35, Math.PI * 1.65);
-  ctx.stroke();
-  ctx.restore();
+function drawAmmoStatus(ctx, cx, topY, ammo, maxAmmo, reloadUntil, now) {
+  const maxA = Math.max(1, Number(maxAmmo) || 1);
+  const curA = Math.max(0, Math.min(maxA, Number(ammo) || 0));
+  const ru = Number(reloadUntil) || 0;
+  const reloading = ru > now;
+  const msg = reloading ? "Reloading" : `${curA}/${maxA}`;
+  ctx.font = "600 10px Segoe UI, system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "rgba(0,0,0,0.6)";
+  ctx.strokeText(msg, cx + 29, topY + 4.5);
+  ctx.fillStyle = reloading ? "#ffd26a" : "#d3e6ff";
+  ctx.fillText(msg, cx + 29, topY + 4.5);
+}
+
+function weaponOutfitTone(weaponType, fallbackHex) {
+  switch (weaponType) {
+    case "shotgun":
+      return "#9f6b3d";
+    case "rocket":
+      return "#8f4742";
+    case "sniper":
+      return "#3c6e9e";
+    case "minigun":
+      return "#5a616b";
+    default:
+      return fallbackHex;
+  }
 }
 
 function drawWeaponModel(ctx, weaponType, S) {
@@ -1391,6 +1396,7 @@ function drawBulletSprite(ctx, b) {
  */
 function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   const S = 1.4; // scale factor
+  const outfit = weaponOutfitTone(weaponType, hullColor);
 
   // Shadow on ground
   ctx.fillStyle = "rgba(0,0,0,0.22)";
@@ -1408,7 +1414,7 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.fill();
 
   // Legs (trouser color)
-  ctx.fillStyle = shadeColor(hullColor, -45);
+  ctx.fillStyle = shadeColor(outfit, -40);
   ctx.beginPath();
   ctx.ellipse(-3 * S, -5.5 * S, 4 * S, 2.8 * S, -0.2, 0, Math.PI * 2);
   ctx.fill();
@@ -1417,7 +1423,7 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.fill();
 
   // Body (torso)
-  ctx.fillStyle = hullColor;
+  ctx.fillStyle = outfit;
   ctx.beginPath();
   ctx.ellipse(0, 0, 8 * S, 7.5 * S, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -1426,12 +1432,12 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.stroke();
 
   // Shirt pocket detail
-  ctx.strokeStyle = shadeColor(hullColor, -18);
+  ctx.strokeStyle = shadeColor(outfit, -18);
   ctx.lineWidth = 0.7;
   ctx.strokeRect(-1 * S, -3 * S, 3.5 * S, 3 * S);
 
   // Collar V-line
-  ctx.strokeStyle = shadeColor(hullColor, -25);
+  ctx.strokeStyle = shadeColor(outfit, -25);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(3 * S, -2.5 * S);
@@ -1440,7 +1446,7 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.stroke();
 
   // Arm holding gun (right arm, skin-toned hand)
-  ctx.fillStyle = shadeColor(hullColor, -15);
+  ctx.fillStyle = shadeColor(outfit, -15);
   ctx.beginPath();
   ctx.moveTo(4 * S, -3 * S);
   ctx.lineTo(12 * S, -3.2 * S);
@@ -1455,7 +1461,7 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.fill();
 
   // Other arm (left, tucked, supporting)
-  ctx.fillStyle = shadeColor(hullColor, -15);
+  ctx.fillStyle = shadeColor(outfit, -15);
   ctx.beginPath();
   ctx.moveTo(2 * S, 4 * S);
   ctx.lineTo(8 * S, 3 * S);
@@ -1489,10 +1495,18 @@ function drawTankSprite(ctx, hullColor, isLocal, weaponType = "minigun") {
   ctx.fill();
 
   // Hair (crescent on back of head)
-  ctx.fillStyle = shadeColor(hullColor, -55);
+  ctx.fillStyle = shadeColor(outfit, -55);
   ctx.beginPath();
   ctx.arc(0.5 * S, 0, 5.2 * S, Math.PI * 0.5, Math.PI * 1.5);
   ctx.fill();
+
+  // Weapon-class shoulder stripe so silhouettes differ even at distance.
+  ctx.strokeStyle = weaponOutfitTone(weaponType, "#d0d7de");
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(-4.8 * S, -3.5 * S);
+  ctx.lineTo(-0.6 * S, -0.4 * S);
+  ctx.stroke();
 
   // Eye dot
   ctx.fillStyle = "#2a2015";
@@ -1649,6 +1663,9 @@ function draw() {
     ctx.restore();
 
     const nameY = e.y - 20;
+    const eMaxHp = e.maxHp != null ? e.maxHp : 100;
+    const eCurHp = e.hp != null ? e.hp : eMaxHp;
+    drawPlayerHealthBar(ctx, e.x, nameY - 13, eCurHp, eMaxHp);
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
@@ -1710,6 +1727,7 @@ function draw() {
     const maxHp = p.maxHp != null ? p.maxHp : 100;
     const curHp = p.hp != null ? p.hp : maxHp;
     drawPlayerHealthBar(ctx, p.x, nameY - 13, curHp, maxHp);
+    drawAmmoStatus(ctx, p.x, nameY - 13, p.ammo, p.maxAmmo, p.reloadUntil, clock);
 
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
@@ -1718,7 +1736,6 @@ function draw() {
     ctx.strokeText(p.name, p.x, nameY);
     ctx.fillStyle = "#e6edf3";
     ctx.fillText(p.name, p.x, nameY);
-    drawReloadSpinner(ctx, p.x, nameY, p.name, clock, p.lastFiredAt, p.weaponCooldownMs);
   }
 
   ctx.restore();

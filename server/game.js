@@ -42,6 +42,8 @@ const WEAPON_PROFILES = {
   shotgun: {
     name: "Shotgun",
     fireCooldownMs: 720,
+    magazineSize: 5,
+    reloadMs: 1900,
     pelletCount: 6,
     spread: 0.28,
     bulletSpeed: 8.2,
@@ -52,6 +54,8 @@ const WEAPON_PROFILES = {
   rocket: {
     name: "Rocket Launcher",
     fireCooldownMs: 930,
+    magazineSize: 1,
+    reloadMs: 2400,
     pelletCount: 1,
     spread: 0,
     bulletSpeed: 5.9,
@@ -65,6 +69,8 @@ const WEAPON_PROFILES = {
   sniper: {
     name: "Sniper Rifle",
     fireCooldownMs: 980,
+    magazineSize: 1,
+    reloadMs: 2100,
     pelletCount: 1,
     spread: 0,
     bulletSpeed: 15,
@@ -76,6 +82,8 @@ const WEAPON_PROFILES = {
   minigun: {
     name: "Minigun",
     fireCooldownMs: 120,
+    magazineSize: 45,
+    reloadMs: 1500,
     pelletCount: 1,
     spread: 0.09,
     bulletSpeed: 8.8,
@@ -522,10 +530,13 @@ export class GameRoom {
       maxHp: ENEMY_MAX_HP,
       weaponType,
       weaponName: prof.name,
+      ammo: prof.magazineSize || 1,
+      maxAmmo: prof.magazineSize || 1,
+      reloadUntil: 0,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
       _lastPath: null,
-      input: { forward: false, back: false, left: false, right: false, fire: false },
+      input: { forward: false, back: false, left: false, right: false, fire: false, reload: false },
     });
   }
 
@@ -560,9 +571,12 @@ export class GameRoom {
       maxHp: PLAYER_MAX_HP,
       score: 0,
       weaponType,
+      ammo: (WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1,
+      maxAmmo: (WEAPON_PROFILES[weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1,
+      reloadUntil: 0,
       lastFire: 0,
       respawnAt: 0,
-      input: { forward: false, back: false, left: false, right: false, fire: false },
+      input: { forward: false, back: false, left: false, right: false, fire: false, reload: false },
     });
     this._pveMaybeSpawnInitialWave();
   }
@@ -581,7 +595,33 @@ export class GameRoom {
       left: !!input.left,
       right: !!input.right,
       fire: !!input.fire,
+      reload: !!input.reload,
     };
+  }
+
+  _tickReloadState(ent, now, forceReload = false) {
+    const profile = WEAPON_PROFILES[ent.weaponType] || {
+      magazineSize: 10,
+      reloadMs: 1600,
+    };
+    const magSize = Math.max(1, profile.magazineSize || 1);
+    if (typeof ent.maxAmmo !== "number" || ent.maxAmmo <= 0) ent.maxAmmo = magSize;
+    if (typeof ent.ammo !== "number") ent.ammo = ent.maxAmmo;
+    if (typeof ent.reloadUntil !== "number") ent.reloadUntil = 0;
+
+    if (ent.reloadUntil > 0 && ent.reloadUntil <= now) {
+      ent.reloadUntil = 0;
+      ent.ammo = ent.maxAmmo;
+    }
+
+    if (forceReload && ent.reloadUntil <= now && ent.ammo < ent.maxAmmo) {
+      ent.reloadUntil = now + Math.max(300, profile.reloadMs || 1600);
+      return;
+    }
+
+    if (ent.ammo <= 0 && ent.reloadUntil <= now) {
+      ent.reloadUntil = now + Math.max(300, profile.reloadMs || 1600);
+    }
   }
 
   _closestLivingPlayer(ex, ey) {
@@ -599,7 +639,7 @@ export class GameRoom {
   }
 
   _enemyBrain(e, now) {
-    const input = { forward: false, back: false, left: false, right: false, fire: false };
+    const input = { forward: false, back: false, left: false, right: false, fire: false, reload: false };
     const target = this._closestLivingPlayer(e.x, e.y);
     if (!target) return input;
 
@@ -690,6 +730,8 @@ export class GameRoom {
     const profile = WEAPON_PROFILES[ent.weaponType] || {
       name: "Rifle",
       fireCooldownMs: FIRE_COOLDOWN_MS,
+      magazineSize: 10,
+      reloadMs: 1600,
       pelletCount: 1,
       spread: 0,
       bulletSpeed: BULLET_SPEED,
@@ -697,24 +739,49 @@ export class GameRoom {
       maxBounces: MAX_BOUNCES,
       bulletRadius: BULLET_R,
     };
+
+    const magSize = Math.max(1, profile.magazineSize || 1);
+    if (typeof ent.maxAmmo !== "number" || ent.maxAmmo <= 0) ent.maxAmmo = magSize;
+    if (typeof ent.ammo !== "number") ent.ammo = ent.maxAmmo;
+    if (typeof ent.reloadUntil !== "number") ent.reloadUntil = 0;
+
+    if (ent.reloadUntil > now) return;
+    if (ent.reloadUntil > 0 && ent.reloadUntil <= now) {
+      ent.reloadUntil = 0;
+      ent.ammo = ent.maxAmmo;
+    }
+
+    if (ent.ammo <= 0) {
+      ent.reloadUntil = now + Math.max(300, profile.reloadMs || 1600);
+      return;
+    }
+
     if (now - ent.lastFire < profile.fireCooldownMs) return;
-    ent.lastFire = now;
+
+    let fired = false;
 
     const pelletCount = profile.pelletCount || 1;
     if (pelletCount === 1) {
       const spread = profile.spread || 0;
       const offset = spread > 0 ? (this._rng() * 2 - 1) * spread : 0;
-      this._spawnBullet(ent, now, ent.angle + offset, profile);
-      return;
+      fired = this._spawnBullet(ent, now, ent.angle + offset, profile) || fired;
+    } else {
+      const spread = profile.spread || 0;
+      const start = -spread / 2;
+      const step = pelletCount > 1 ? spread / (pelletCount - 1) : 0;
+      for (let i = 0; i < pelletCount; i++) {
+        const jitter = (this._rng() * 2 - 1) * step * 0.25;
+        const offset = start + step * i + jitter;
+        fired = this._spawnBullet(ent, now, ent.angle + offset, profile) || fired;
+      }
     }
 
-    const spread = profile.spread || 0;
-    const start = -spread / 2;
-    const step = pelletCount > 1 ? spread / (pelletCount - 1) : 0;
-    for (let i = 0; i < pelletCount; i++) {
-      const jitter = (this._rng() * 2 - 1) * step * 0.25;
-      const offset = start + step * i + jitter;
-      this._spawnBullet(ent, now, ent.angle + offset, profile);
+    if (!fired) return;
+
+    ent.lastFire = now;
+    ent.ammo = Math.max(0, ent.ammo - 1);
+    if (ent.ammo <= 0) {
+      ent.reloadUntil = now + Math.max(300, profile.reloadMs || 1600);
     }
   }
 
@@ -724,7 +791,7 @@ export class GameRoom {
     const by = owner.y + Math.sin(angle) * (TANK_R + radius + 2);
     for (const w of this.walls) {
       if (circleRectOverlap(bx, by, radius, w)) {
-        return;
+        return false;
       }
     }
 
@@ -746,6 +813,7 @@ export class GameRoom {
       splashRadius: profile.splashRadius || 0,
       splashDamage: profile.splashDamage || 0,
     });
+    return true;
   }
 
   _applySplashDamage(ownerId, cx, cy, radius, damage, now) {
@@ -824,6 +892,10 @@ export class GameRoom {
     }
     if ("weaponType" in ent) {
       ent.weaponType = randomWeaponType(this._rng);
+      const prof = WEAPON_PROFILES[ent.weaponType] || WEAPON_PROFILES.minigun;
+      ent.maxAmmo = prof.magazineSize || 1;
+      ent.ammo = ent.maxAmmo;
+      ent.reloadUntil = 0;
     }
     if ("_lastPath" in ent) {
       ent._lastPath = null;
@@ -856,6 +928,7 @@ export class GameRoom {
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       this._applyTankPhysics(p, p.input);
+      this._tickReloadState(p, now, !!p.input.reload);
       if (p.input.fire) this._tryFire(p, now);
     }
 
@@ -865,6 +938,7 @@ export class GameRoom {
         const brain = this._enemyBrain(e, now);
         e.input = brain;
         this._applyTankPhysics(e, brain);
+        this._tickReloadState(e, now, false);
         if (brain.fire) this._tryFire(e, now);
       }
     }
@@ -1007,6 +1081,10 @@ export class GameRoom {
           weaponName: prof.name,
           weaponCooldownMs: prof.fireCooldownMs,
           lastFiredAt: p.lastFire,
+          ammo: p.ammo ?? (prof.magazineSize || 1),
+          maxAmmo: p.maxAmmo ?? (prof.magazineSize || 1),
+          reloadUntil: p.reloadUntil || 0,
+          reloadMs: prof.reloadMs || 0,
           respawnAt: p.respawnAt || 0,
         };
       }),
@@ -1050,6 +1128,9 @@ export class GameRoom {
         maxHp: e.maxHp,
         weaponType: e.weaponType || "minigun",
         weaponName: (WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).name,
+        ammo: e.ammo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1),
+        maxAmmo: e.maxAmmo ?? ((WEAPON_PROFILES[e.weaponType] || WEAPON_PROFILES.minigun).magazineSize || 1),
+        reloadUntil: e.reloadUntil || 0,
       }));
     }
     return snap;
