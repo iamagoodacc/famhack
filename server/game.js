@@ -224,6 +224,38 @@ function resolveCircleRect(cx, cy, r, rect) {
   };
 }
 
+/** Decoration types placed randomly in open floor areas. */
+const DECOR_TYPES = ["vase", "chair", "table", "lamp", "plant"];
+const DECOR_RADIUS = 10;
+const DECOR_HP = 1;
+
+function generateDecorations(rng, walls, count) {
+  const decorations = [];
+  let id = 1;
+  for (let i = 0; i < count * 4 && decorations.length < count; i++) {
+    const x = 60 + rng() * (ARENA_W - 120);
+    const y = 60 + rng() * (ARENA_H - 120);
+    let blocked = false;
+    for (const w of walls) {
+      if (circleRectOverlap(x, y, DECOR_RADIUS + 8, w)) { blocked = true; break; }
+    }
+    if (blocked) continue;
+    // Don't place too close to other decorations
+    let tooClose = false;
+    for (const d of decorations) {
+      if (Math.hypot(d.x - x, d.y - y) < 40) { tooClose = true; break; }
+    }
+    if (tooClose) continue;
+    decorations.push({
+      id: id++,
+      x, y,
+      type: DECOR_TYPES[Math.floor(rng() * DECOR_TYPES.length)],
+      hp: DECOR_HP,
+    });
+  }
+  return decorations;
+}
+
 function randomSpawn(rng, walls) {
   for (let attempt = 0; attempt < 55; attempt++) {
     const x = 80 + rng() * (ARENA_W - 160);
@@ -248,6 +280,7 @@ export class GameRoom {
     this.tick = 0;
     this._rng = Math.random;
     this.walls = generateMaze(this._rng);
+    this.decorations = generateDecorations(this._rng, this.walls, 18);
   }
 
   addPlayer(id, name) {
@@ -395,6 +428,18 @@ export class GameRoom {
       b.vx = vx;
       b.vy = vy;
 
+      // Bullet hits decorations
+      for (let di = this.decorations.length - 1; di >= 0; di--) {
+        const dec = this.decorations[di];
+        if (Math.hypot(dec.x - b.x, dec.y - b.y) < DECOR_RADIUS + BULLET_R) {
+          dec.hp--;
+          if (dec.hp <= 0) this.decorations.splice(di, 1);
+          dead = true;
+          break;
+        }
+      }
+      if (dead) continue;
+
       for (const p of this.players.values()) {
         if (!p.alive) continue;
         if (p.id === b.ownerId && now - b.born < BULLET_OWNER_GRACE_MS) continue;
@@ -432,6 +477,12 @@ export class GameRoom {
         angle: p.angle,
         alive: p.alive,
         score: p.score,
+      })),
+      decorations: this.decorations.map((d) => ({
+        id: d.id,
+        x: d.x,
+        y: d.y,
+        type: d.type,
       })),
       bullets: this.bullets.map((b) => ({
         id: b.id,

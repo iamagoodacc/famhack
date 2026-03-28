@@ -412,86 +412,134 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 /**
- * Top-down person with a gun. Fits inside server hitbox circle (r=10).
- * Facing right (angle=0). Person body is ~12px wide, gun extends forward.
+ * Top-down person with a gun (~1.4x bigger, more detail).
+ * Facing right (angle=0).
  */
 function drawTankSprite(ctx, hullColor, isLocal) {
+  const S = 1.4; // scale factor
+
   // Shadow on ground
   ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.beginPath();
-  ctx.ellipse(0, 2, 9, 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 2 * S, 12 * S, 8 * S, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Legs (two small ovals behind body)
-  ctx.fillStyle = shadeColor(hullColor, -40);
+  // Feet / shoes (behind legs)
+  ctx.fillStyle = "#3a2a1a";
   ctx.beginPath();
-  ctx.ellipse(-3, -4.5, 3, 2.2, -0.2, 0, Math.PI * 2);
+  ctx.ellipse(-5 * S, -6 * S, 2.5 * S, 1.8 * S, -0.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
-  ctx.ellipse(-3, 4.5, 3, 2.2, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(-5 * S, 6 * S, 2.5 * S, 1.8 * S, 0.3, 0, Math.PI * 2);
   ctx.fill();
 
-  // Body (torso - larger oval)
+  // Legs (trouser color)
+  ctx.fillStyle = shadeColor(hullColor, -45);
+  ctx.beginPath();
+  ctx.ellipse(-3 * S, -5.5 * S, 4 * S, 2.8 * S, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-3 * S, 5.5 * S, 4 * S, 2.8 * S, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body (torso)
   ctx.fillStyle = hullColor;
   ctx.beginPath();
-  ctx.ellipse(0, 0, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 8 * S, 7.5 * S, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = isLocal ? "#fff" : "rgba(255,255,255,0.4)";
-  ctx.lineWidth = isLocal ? 1.5 : 0.8;
+  ctx.strokeStyle = isLocal ? "#fff" : "rgba(255,255,255,0.35)";
+  ctx.lineWidth = isLocal ? 2 : 1;
   ctx.stroke();
 
-  // Shirt collar / detail line
-  ctx.strokeStyle = shadeColor(hullColor, -20);
-  ctx.lineWidth = 0.8;
+  // Shirt pocket detail
+  ctx.strokeStyle = shadeColor(hullColor, -18);
+  ctx.lineWidth = 0.7;
+  ctx.strokeRect(-1 * S, -3 * S, 3.5 * S, 3 * S);
+
+  // Collar V-line
+  ctx.strokeStyle = shadeColor(hullColor, -25);
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(0, 0, 3.5, -0.8, 0.8);
+  ctx.moveTo(3 * S, -2.5 * S);
+  ctx.lineTo(5 * S, 0);
+  ctx.lineTo(3 * S, 2.5 * S);
   ctx.stroke();
 
-  // Arm holding gun (right arm extends forward)
+  // Arm holding gun (right arm, skin-toned hand)
   ctx.fillStyle = shadeColor(hullColor, -15);
-  // Upper arm
   ctx.beginPath();
-  ctx.moveTo(3, -2);
-  ctx.lineTo(9, -2.5);
-  ctx.lineTo(9, 0.5);
-  ctx.lineTo(3, 1);
+  ctx.moveTo(4 * S, -3 * S);
+  ctx.lineTo(12 * S, -3.2 * S);
+  ctx.lineTo(12 * S, 0.5 * S);
+  ctx.lineTo(4 * S, 1 * S);
   ctx.closePath();
   ctx.fill();
-
-  // Other arm (left, tucked)
+  // Hand
+  ctx.fillStyle = "#e0b896";
   ctx.beginPath();
-  ctx.moveTo(1, 3);
-  ctx.lineTo(6, 2.5);
-  ctx.lineTo(6, 4.5);
-  ctx.lineTo(1, 5);
-  ctx.closePath();
+  ctx.ellipse(12 * S, -1.2 * S, 2 * S, 2.2 * S, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Gun
+  // Other arm (left, tucked, supporting)
+  ctx.fillStyle = shadeColor(hullColor, -15);
+  ctx.beginPath();
+  ctx.moveTo(2 * S, 4 * S);
+  ctx.lineTo(8 * S, 3 * S);
+  ctx.lineTo(8 * S, 5.5 * S);
+  ctx.lineTo(2 * S, 6.5 * S);
+  ctx.closePath();
+  ctx.fill();
+  // Hand
+  ctx.fillStyle = "#e0b896";
+  ctx.beginPath();
+  ctx.ellipse(8.5 * S, 4.2 * S, 1.8 * S, 2 * S, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Gun body
   ctx.fillStyle = "#3a3a3a";
-  ctx.fillRect(8, -2.2, 10, 3.2);  // gun body
+  ctx.fillRect(10 * S, -3 * S, 13 * S, 4.2 * S);
+  // Barrel
   ctx.fillStyle = "#2a2a2a";
-  ctx.fillRect(16, -1.8, 3, 2.4);  // barrel
-  ctx.fillStyle = "#555";
-  ctx.fillRect(8, -2.2, 2, 3.2);   // grip area
+  ctx.fillRect(21 * S, -2.4 * S, 4.5 * S, 3 * S);
+  // Grip
+  ctx.fillStyle = "#4a3a2a";
+  ctx.fillRect(10 * S, -3 * S, 2.5 * S, 4.2 * S);
+  // Trigger guard
+  ctx.strokeStyle = "#555";
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.arc(13 * S, 0.8 * S, 1.2 * S, 0, Math.PI);
+  ctx.stroke();
   // Muzzle
   ctx.fillStyle = "#666";
-  ctx.fillRect(18.5, -1.2, 1.2, 1.2);
+  ctx.fillRect(25 * S, -1.6 * S, 1.5 * S, 1.5 * S);
 
-  // Head (circle on top)
+  // Head
   const skinTone = "#e0b896";
   ctx.fillStyle = skinTone;
   ctx.beginPath();
-  ctx.arc(1, 0, 3.8, 0, Math.PI * 2);
+  ctx.arc(1.5 * S, 0, 5 * S, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 0.7;
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 0.8;
   ctx.stroke();
 
-  // Hair (crescent on back of head)
-  ctx.fillStyle = shadeColor(hullColor, -50);
+  // Ear
+  ctx.fillStyle = "#d4a880";
   ctx.beginPath();
-  ctx.arc(0.2, 0, 3.9, Math.PI * 0.55, Math.PI * 1.45);
+  ctx.ellipse(-2.5 * S, 0, 1.5 * S, 2 * S, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Hair (crescent on back of head)
+  ctx.fillStyle = shadeColor(hullColor, -55);
+  ctx.beginPath();
+  ctx.arc(0.5 * S, 0, 5.2 * S, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.fill();
+
+  // Eye dot
+  ctx.fillStyle = "#2a2015";
+  ctx.beginPath();
+  ctx.arc(4.5 * S, -1.2 * S, 0.8 * S, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -621,20 +669,121 @@ function draw() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
+  // Breakable house decorations
+  const decorations = state.decorations || [];
+  for (const dec of decorations) {
+    ctx.save();
+    ctx.translate(dec.x, dec.y);
+    if (dec.type === "vase") {
+      ctx.fillStyle = "#8b5e3c";
+      ctx.beginPath();
+      ctx.ellipse(0, 3, 5, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#a0704c";
+      ctx.beginPath();
+      ctx.moveTo(-4, 3);
+      ctx.quadraticCurveTo(-5, -3, -2, -7);
+      ctx.lineTo(2, -7);
+      ctx.quadraticCurveTo(5, -3, 4, 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "#6b4226";
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+      ctx.fillStyle = "#bf8a60";
+      ctx.fillRect(-2, -7, 4, 1.5);
+      // Flower
+      ctx.fillStyle = "#d44";
+      for (let i = 0; i < 5; i++) {
+        ctx.beginPath();
+        const a = (i / 5) * Math.PI * 2;
+        ctx.arc(Math.cos(a) * 2.5, -9 + Math.sin(a) * 2.5, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#ee8";
+      ctx.beginPath();
+      ctx.arc(0, -9, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (dec.type === "chair") {
+      ctx.fillStyle = "#6b4f38";
+      ctx.fillRect(-5, -6, 10, 12);
+      ctx.fillStyle = "#7d5c42";
+      ctx.fillRect(-6, -8, 12, 3);
+      ctx.strokeStyle = "#4a3525";
+      ctx.lineWidth = 0.6;
+      ctx.strokeRect(-5, -6, 10, 12);
+    } else if (dec.type === "table") {
+      ctx.fillStyle = "#7a5535";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 9, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#5a3d22";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.fillStyle = "#8a6545";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (dec.type === "lamp") {
+      ctx.fillStyle = "#555";
+      ctx.beginPath();
+      ctx.ellipse(0, 4, 4, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#666";
+      ctx.fillRect(-1, -5, 2, 9);
+      ctx.fillStyle = "#f0d870";
+      ctx.beginPath();
+      ctx.moveTo(-5, -5);
+      ctx.lineTo(5, -5);
+      ctx.lineTo(3, -9);
+      ctx.lineTo(-3, -9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,230,140,0.15)";
+      ctx.beginPath();
+      ctx.arc(0, -5, 12, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (dec.type === "plant") {
+      ctx.fillStyle = "#8a5a3a";
+      ctx.beginPath();
+      ctx.moveTo(-4, 4);
+      ctx.quadraticCurveTo(-5, 0, -3, -2);
+      ctx.lineTo(3, -2);
+      ctx.quadraticCurveTo(5, 0, 4, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#3a8a3a";
+      for (let i = 0; i < 6; i++) {
+        ctx.beginPath();
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        const lx = Math.cos(a) * 5;
+        const ly = -4 + Math.sin(a) * 5;
+        ctx.ellipse(lx, ly, 3, 1.8, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#2a6a2a";
+      ctx.beginPath();
+      ctx.arc(0, -5, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   for (const b of bullets) {
-    const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, 10);
-    g.addColorStop(0, "#fff5e6");
-    g.addColorStop(0.25, "#ff9b6a");
-    g.addColorStop(0.7, "#ff5533");
-    g.addColorStop(1, "rgba(180,40,20,0)");
-    ctx.fillStyle = g;
+    // Small solid bullet
+    ctx.fillStyle = "#c8a050";
     ctx.beginPath();
-    ctx.arc(b.x, b.y, 10, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "#ffe8b0";
     ctx.beginPath();
-    ctx.arc(b.x, b.y, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#fff8f0";
+    ctx.arc(b.x - 0.8, b.y - 0.8, 1.5, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "rgba(100,70,30,0.5)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   for (const p of players) {
@@ -645,7 +794,7 @@ function draw() {
     drawTankSprite(ctx, col, p.id === myId);
     ctx.restore();
 
-    const nameY = p.y - 20;
+    const nameY = p.y - 26;
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
