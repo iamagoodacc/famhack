@@ -860,7 +860,7 @@ export class GameRoom {
     });
   }
 
-  _applyTankPhysics(ent, input) {
+  _applyTankPhysics(ent, input, now) {
     if (!ent.alive) return;
 
     const profile = WEAPON_PROFILES[ent.weaponType] || WEAPON_PROFILES.minigun;
@@ -1304,7 +1304,7 @@ export class GameRoom {
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;
-      this._applyTankPhysics(p, p.input);
+      this._applyTankPhysics(p, p.input, now);
       this._checkPowerupPickup(p, now);
       this._tickReloadState(p, now, !!p.input.reload);
       if (p.input.fire) this._tryFire(p, now);
@@ -1315,7 +1315,7 @@ export class GameRoom {
         if (!e.alive) continue;
         const brain = this._enemyBrain(e, now);
         e.input = brain;
-        this._applyTankPhysics(e, brain);
+        this._applyTankPhysics(e, brain, now);
         this._tickReloadState(e, now, false);
         if (brain.fire) this._tryFire(e, now);
       }
