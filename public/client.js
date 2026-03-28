@@ -282,8 +282,10 @@ function localPlayerNameForSlot(base, slotIndex) {
 }
 
 function readLocalPlayersFromUi() {
-  const raw = Number(localPlayersSelect?.value ?? 1);
-  return Math.min(4, Math.max(1, Number.isFinite(raw) ? raw : 1));
+  const el = document.getElementById("local-players-select") ?? localPlayersSelect;
+  const raw = Number.parseInt(String(el?.value ?? "1").trim(), 10);
+  if (!Number.isFinite(raw) || raw < 1) return 1;
+  return Math.min(4, Math.max(1, raw));
 }
 
 function disconnectAll() {
@@ -479,16 +481,46 @@ function tickAndDrawParticles(ctx) {
     p.vy = p.vy * (p.drag || 0.92) + (p.gravity || 0);
     p.x += p.vx;
     p.y += p.vy;
+  }
+  /** Batch by fill color + quantized alpha to cut draw calls (no per-particle gradients). */
+  const buckets = new Map();
+  for (const p of fxParticles) {
     const a = Math.max(0, Math.min(1, p.life / (p.maxLife || 1)));
-    ctx.globalAlpha = a;
-    ctx.fillStyle = p.color || "rgba(255,255,255,0.8)";
+    const aq = Math.max(1, Math.round(a * 10));
+    const color = p.color || "rgba(255,255,255,0.8)";
+    const key = `${color}\x00${aq}`;
+    let list = buckets.get(key);
+    if (!list) {
+      list = [];
+      buckets.set(key, list);
+    }
+    list.push(p);
+  }
+  for (const [key, list] of buckets) {
+    const sep = key.indexOf("\x00");
+    const color = key.slice(0, sep);
+    const aq = Number(key.slice(sep + 1));
+    ctx.globalAlpha = aq / 10;
+    ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size || 1.2, 0, Math.PI * 2);
+    for (const p of list) {
+      const sz = p.size || 1.2;
+      const x = p.x;
+      const y = p.y;
+      if (sz <= 2.1) {
+        const h = sz * 0.5;
+        ctx.rect(x - h, y - h, sz, sz);
+      } else {
+        ctx.moveTo(x + sz, y);
+        ctx.arc(x, y, sz, 0, Math.PI * 2);
+      }
+    }
     ctx.fill();
   }
   ctx.globalAlpha = 1;
 }
 
+/** Same look as before, without createRadialGradient (much cheaper at 60fps). */
 function drawExplosionFx(ctx, ex) {
   const life = Math.max(0, Number(ex.life) || 0);
   const maxLife = Math.max(1, Number(ex.maxLife) || 1);
@@ -496,19 +528,21 @@ function drawExplosionFx(ctx, ex) {
   const r = Number(ex.r) || 24;
   const coreR = r * (0.18 + (1 - t) * 0.65);
   const ringR = r * (0.5 + (1 - t) * 0.65);
-
-  const g = ctx.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, ringR);
-  g.addColorStop(0, `rgba(255,235,170,${0.38 * t + 0.15})`);
-  g.addColorStop(0.45, `rgba(255,132,72,${0.48 * t + 0.18})`);
-  g.addColorStop(1, "rgba(120,30,0,0)");
-  ctx.fillStyle = g;
+  const { x, y } = ex;
+  const aRing = 0.38 * t + 0.15;
+  const aCore = 0.52 * t + 0.16;
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = `rgba(255,132,72,${0.48 * t + 0.2})`;
   ctx.beginPath();
-  ctx.arc(ex.x, ex.y, ringR, 0, Math.PI * 2);
+  ctx.arc(x, y, ringR, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = `rgba(255,244,218,${0.52 * t + 0.16})`;
+  ctx.fillStyle = `rgba(255,235,170,${aRing})`;
   ctx.beginPath();
-  ctx.arc(ex.x, ex.y, coreR, 0, Math.PI * 2);
+  ctx.arc(x, y, ringR * 0.88, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(255,244,218,${aCore})`;
+  ctx.beginPath();
+  ctx.arc(x, y, coreR, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -517,19 +551,19 @@ function drawGroundFireFx(ctx, f) {
   const maxLife = Math.max(1, Number(f.maxLife) || 1);
   const t = life / maxLife;
   const r = Number(f.r) || 10;
-
-  const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, r * 1.8);
-  g.addColorStop(0, `rgba(255,240,170,${0.34 * t + 0.2})`);
-  g.addColorStop(0.5, `rgba(255,140,58,${0.42 * t + 0.2})`);
-  g.addColorStop(1, "rgba(120,30,0,0)");
-  ctx.fillStyle = g;
+  const { x, y } = f;
+  const outer = r * 1.8;
+  ctx.fillStyle = `rgba(255,140,58,${0.38 * t + 0.18})`;
   ctx.beginPath();
-  ctx.arc(f.x, f.y, r * 1.8, 0, Math.PI * 2);
+  ctx.arc(x, y, outer, 0, Math.PI * 2);
   ctx.fill();
-
-  ctx.fillStyle = `rgba(255,105,38,${0.22 * t + 0.12})`;
+  ctx.fillStyle = `rgba(255,240,170,${0.34 * t + 0.22})`;
   ctx.beginPath();
-  ctx.arc(f.x + r * 0.12, f.y - r * 0.08, r * 1.05, 0, Math.PI * 2);
+  ctx.arc(x, y, outer * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = `rgba(255,105,38,${0.22 * t + 0.14})`;
+  ctx.beginPath();
+  ctx.arc(x + r * 0.12, y - r * 0.08, r * 1.05, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -796,6 +830,27 @@ function buildSocketQuery(nameStr, mode, roomStr) {
   return { name: nameStr, mode, room: roomStr };
 }
 
+/**
+ * Socket.IO reuses one Manager per URL; multiple `io()` calls can share the same
+ * socket id. Couch co-op needs a separate WebSocket (and server player) per seat,
+ * so for 2–4 locals we create a fresh `Manager` per connection — guaranteed
+ * distinct `socket.id`s. `forceNew` alone is not reliable across all browsers.
+ */
+function ioWithQuery(query) {
+  const uri = window.location.origin;
+  const path = "/socket.io";
+  const transports = ["websocket", "polling"];
+  if (localPlayerCount > 1) {
+    const Manager = io.Manager;
+    if (typeof Manager === "function") {
+      const manager = new Manager(uri, { path, query, transports });
+      return manager.socket("/");
+    }
+    return io(uri, { path, query, transports, forceNew: true });
+  }
+  return io(uri, { path, query, transports });
+}
+
 function buildInviteUrl() {
   const u = new URL(window.location.href);
   u.searchParams.set("room", currentRoomCode);
@@ -982,10 +1037,14 @@ function onStateMessage(snap) {
     if (Array.isArray(snap?.bullets)) {
       for (const b of snap.bullets) current.set(b.id, b);
     }
+    /** Avoid particle spikes when many bullets despawn in one state tick. */
+    let impactBudget = 10;
     for (const [id, oldB] of prevBulletsById.entries()) {
       if (current.has(id)) continue;
+      if (impactBudget <= 0) break;
       if (nearWall(oldB.x, oldB.y, snap?.walls, (oldB.radius || 3.5) + 9)) {
         spawnImpactParticles(oldB.x, oldB.y, oldB.vx || 0, oldB.vy || 0, oldB.weaponType);
+        impactBudget -= 1;
       }
     }
   }
@@ -1101,7 +1160,7 @@ function connectSingle(name, mode, roomQuery) {
   disconnectAll();
   localPlayerCount = 1;
   initKeysSlots();
-  const s = io({ query: buildSocketQuery(localPlayerNameForSlot(name, 0), mode, roomQuery) });
+  const s = ioWithQuery(buildSocketQuery(localPlayerNameForSlot(name, 0), mode, roomQuery));
   socket = s;
   connectionSlots = [{ socket: s, slot: 0 }];
 
@@ -1121,7 +1180,7 @@ function connectLocalHost(name, mode) {
   initKeysSlots();
   couchSlavesSpawned = false;
 
-  const primary = io({ query: buildSocketQuery(localPlayerNameForSlot(name, 0), mode, "new") });
+  const primary = ioWithQuery(buildSocketQuery(localPlayerNameForSlot(name, 0), mode, "new"));
   socket = primary;
   connectionSlots = [{ socket: primary, slot: 0 }];
 
@@ -1133,7 +1192,7 @@ function connectLocalHost(name, mode) {
     couchSlavesSpawned = true;
     onRoomJoinedFirstTime(code, name, mode);
     for (let i = 1; i < localPlayerCount; i++) {
-      const slave = io({ query: buildSocketQuery(localPlayerNameForSlot(name, i), mode, code) });
+      const slave = ioWithQuery(buildSocketQuery(localPlayerNameForSlot(name, i), mode, code));
       connectionSlots.push({ socket: slave, slot: i });
       slave.on("connect", () => localIds.add(slave.id));
       slave.on("room_error", handleRoomError);
@@ -1151,7 +1210,7 @@ function connectLocalJoin(name, mode, roomCode) {
   let seenRoom = false;
 
   for (let i = 0; i < localPlayerCount; i++) {
-    const s = io({ query: buildSocketQuery(localPlayerNameForSlot(name, i), mode, roomCode) });
+    const s = ioWithQuery(buildSocketQuery(localPlayerNameForSlot(name, i), mode, roomCode));
     connectionSlots.push({ socket: s, slot: i });
     if (i === 0) socket = s;
 
@@ -1172,8 +1231,12 @@ function connectLocalJoin(name, mode, roomCode) {
   }
 }
 
-function connect(name, mode, roomQuery) {
-  localPlayerCount = readLocalPlayersFromUi();
+function connect(name, mode, roomQuery, playerCountOverride) {
+  if (typeof playerCountOverride === "number" && Number.isFinite(playerCountOverride)) {
+    localPlayerCount = Math.min(4, Math.max(1, Math.floor(playerCountOverride)));
+  } else {
+    localPlayerCount = readLocalPlayersFromUi();
+  }
   localStorage.setItem(STORAGE_LOCAL, String(localPlayerCount));
 
   if (localPlayerCount === 1) {
@@ -1211,11 +1274,13 @@ function startFromLobby() {
 
   const roomQuery = rc.length === ROOM_CODE_LEN ? rc : "new";
 
+  const playerCount = readLocalPlayersFromUi();
+
   localStorage.setItem(STORAGE_NAME, name);
   localStorage.setItem(STORAGE_MODE, selectedModeId);
 
   btnPlay.disabled = true;
-  connect(name, selectedModeId, roomQuery);
+  connect(name, selectedModeId, roomQuery, playerCount);
 }
 
 btnPlay.addEventListener("click", startFromLobby);
@@ -2078,8 +2143,8 @@ function draw() {
 
     if (dead && mode === "arena") {
       const respawnAt = Number(p.respawnAt) || 0;
-      if (respawnAt > clientNow) {
-        const sec = Math.max(1, Math.ceil((respawnAt - clientNow) / 1000));
+      if (respawnAt > clock) {
+        const sec = Math.max(1, Math.ceil((respawnAt - clock) / 1000));
         ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
         ctx.textAlign = "center";
         ctx.lineWidth = 3;

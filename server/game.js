@@ -1051,9 +1051,15 @@ export class GameRoom {
     return true;
   }
 
-  _applySplashDamage(ownerId, cx, cy, radius, damage, now) {
+  /**
+   * @param {object} [opts]
+   * @param {string} [opts.splashOnlyPlayerId] — If set (arena/deathmatch direct rocket hits), only this player
+   *   receives splash from other players. Prevents one rocket from wiping everyone in splash range (wall hits omit this).
+   */
+  _applySplashDamage(ownerId, cx, cy, radius, damage, now, opts = {}) {
     if (!radius || !damage) return;
     const killer = this.players.get(ownerId);
+    const splashOnlyPlayerId = opts.splashOnlyPlayerId ?? null;
 
     // Strong center hit with fast drop-off toward the edge.
     const scaledDamageAt = (d) => {
@@ -1065,6 +1071,7 @@ export class GameRoom {
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;
+      if (splashOnlyPlayerId != null && p.id !== splashOnlyPlayerId) continue;
       if (this.mode === "pve" && this.players.has(ownerId)) continue;
       if (
         p.id === ownerId &&
@@ -1250,7 +1257,7 @@ export class GameRoom {
             }
             if (b.explodeOnWall) {
               this._spawnExplosion(b.x, b.y, b.weaponType);
-              this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now);
+              this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now, {});
               dead = true;
             } else if ((b.pierceLeft || 0) > 0) {
               b.pierceLeft -= 1;
@@ -1278,7 +1285,19 @@ export class GameRoom {
               p.hp -= b.damage ?? PLAYER_BULLET_DAMAGE;
               if (b.explodeOnWall) {
                 this._spawnExplosion(b.x, b.y, b.weaponType);
-                this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now);
+                const splashOpts =
+                  this.mode === "arena" || this.mode === "deathmatch"
+                    ? { splashOnlyPlayerId: p.id }
+                    : {};
+                this._applySplashDamage(
+                  b.ownerId,
+                  b.x,
+                  b.y,
+                  b.splashRadius,
+                  b.splashDamage,
+                  now,
+                  splashOpts,
+                );
               }
               if (p.hp <= 0) {
                 this._onPlayerHpDepleted(p, killer, now);
