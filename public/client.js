@@ -666,6 +666,8 @@ function enterGame() {
   keybindCapture = null;
   screenLobby.classList.add("hidden");
   screenLobby.setAttribute("hidden", "");
+  const houseBg = document.getElementById("house-bg");
+  if (houseBg) houseBg.style.display = "none";
   screenGame.classList.remove("hidden");
   screenGame.removeAttribute("hidden");
   document.body.classList.add("game-active");
@@ -700,6 +702,8 @@ function leaveGameUi() {
   screenGame.setAttribute("hidden", "");
   screenLobby.classList.remove("hidden");
   screenLobby.removeAttribute("hidden");
+  const houseBg = document.getElementById("house-bg");
+  if (houseBg) houseBg.style.display = "";
 }
 
 const resizeObserver = new ResizeObserver(() => {

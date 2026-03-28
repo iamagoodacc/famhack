@@ -1,122 +1,299 @@
-* {
-  box-sizing: border-box;
-}
+@import url('https://fonts.googleapis.com/css2?family=Lilita+One&family=Patrick+Hand&family=Nunito:wght@400;600;700;800&display=swap');
 
-html,
-body {
-  margin: 0;
-  min-height: 100%;
+* { box-sizing: border-box; margin: 0; }
+
+html, body {
   height: 100%;
+  min-height: 100%;
+  overflow-x: hidden;
 }
 
 body {
-  background: radial-gradient(ellipse 90% 70% at 50% 15%, #3d2b1a 0%, #1a120b 55%);
-  color: #f0e6d8;
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "Nunito", "Segoe UI", system-ui, sans-serif;
+  color: #3a2010;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 1rem;
 }
 
 body.game-active {
   padding: 0;
   overflow: hidden;
-  height: 100%;
   min-height: 100dvh;
 }
 
-.screen {
+/* ================================================================
+   PIXEL-ART BACKGROUND CANVAS
+   ================================================================ */
+.scene-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   width: 100%;
-  max-width: 520px;
+  height: 100%;
+  pointer-events: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ================================================================
+   LOBBY — free-floating, no containing box
+   ================================================================ */
+.lobby {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 1.5rem 1.2rem 2rem;
+  min-height: 100vh;
 }
 
-.screen.hidden,
-[hidden] {
+.lobby.hidden, .screen.hidden, [hidden] {
   display: none !important;
 }
 
-.lobby-card {
-  width: 100%;
-  padding: 1.75rem 1.5rem 1.5rem;
-  background: rgba(45, 32, 20, 0.92);
-  border: 1px solid #5a4030;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
+/* — Semicircular arched title — */
+.title-arc {
+  width: min(90vw, 560px);
+  margin-bottom: 0.2rem;
+  filter: drop-shadow(0 4px 8px rgba(60,20,0,0.35));
+  animation: title-float 4s ease-in-out infinite alternate;
+}
+@keyframes title-float {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-6px); }
 }
 
-.lobby-title {
-  margin: 0 0 0.35rem;
-  font-weight: 700;
-  font-size: 1.5rem;
-  letter-spacing: 0.03em;
-  color: #f5c96a;
-  text-align: center;
+.title-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.title-text {
+  font-family: "Lilita One", "Patrick Hand", cursive;
+  font-size: 62px;
+  fill: #f5e8c0;
+  stroke: #6b3510;
+  stroke-width: 4px;
+  paint-order: stroke fill;
+  letter-spacing: 2px;
+}
+
+.title-shadow {
+  font-family: "Lilita One", "Patrick Hand", cursive;
+  font-size: 62px;
+  fill: rgba(50,20,0,0.4);
+  stroke: none;
+  letter-spacing: 2px;
+  transform: translate(3px, 4px);
 }
 
 .lobby-tagline {
-  margin: 0 0 1.25rem;
-  font-size: 0.9rem;
-  opacity: 0.85;
   text-align: center;
-  line-height: 1.45;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1.15rem;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 20px rgba(0,0,0,0.3);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+  max-width: 440px;
 }
 
-.field-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #b8a08a;
-  margin-bottom: 0.35rem;
-}
-
-.field-input {
+/* — Wood-plank style fields & buttons — */
+.lobby-fields {
+  display: flex;
+  gap: 1rem;
   width: 100%;
-  padding: 0.65rem 0.75rem;
-  font-size: 1rem;
-  color: #f0e6d8;
-  background: #1a120b;
-  border: 1px solid #5a4030;
-  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.lobby-fields .wood-field { flex: 1; min-width: 0; }
+
+.wood-field {
+  width: 100%;
+  margin-bottom: 1rem;
+}
+
+.wood-label {
+  display: block;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  margin-bottom: 0.3rem;
+}
+
+.wood-hint {
+  font-size: 0.82rem;
+  color: #ffe8c8;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+  margin: 0 0 0.35rem;
+  line-height: 1.4;
+}
+
+.wood-input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1.1rem;
+  color: #3a1a05;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(80,40,10,0.04) 3px, rgba(80,40,10,0.04) 4px),
+    linear-gradient(180deg, #f0ddb8, #e4ccaa);
+  border: 3px solid #5a2810;
+  border-radius: 2px;
   outline: none;
+  box-shadow:
+    inset 1px 1px 0 rgba(60,30,10,0.15),
+    inset -1px -1px 0 rgba(255,240,200,0.2),
+    0 2px 0 #3a1808;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  image-rendering: pixelated;
 }
-
-.field-input:focus {
-  border-color: #d4a24c;
-  box-shadow: 0 0 0 3px rgba(212, 162, 76, 0.2);
-}
-
-.field-hint {
-  margin: 0 0 0.4rem;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: #b8a08a;
+.wood-input::placeholder { color: #a08060; }
+.wood-input:focus {
+  border-color: #3a1005;
+  box-shadow: inset 1px 1px 0 rgba(60,30,10,0.15), 0 0 0 3px rgba(90,32,12,0.25);
 }
 
 .room-input {
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 600;
+  letter-spacing: 0.14em;
+  font-weight: 700;
 }
 
+/* — Pixel-art dark red weathered wood button — */
+.wood-btn {
+  font-family: "Lilita One", "Patrick Hand", cursive;
+  color: #f0d8c0;
+  border: 3px solid #3a1008;
+  cursor: pointer;
+  position: relative;
+  text-shadow: 1px 1px 0 #2a0a04, 0 2px 0 #1a0804;
+  transition: transform 0.1s;
+  image-rendering: pixelated;
+  background:
+    /* Pixel-style wood grain: horizontal streaks */
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px),
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 7px,
+      rgba(255,200,150,0.06) 7px, rgba(255,200,150,0.06) 8px),
+    /* Weathered dark red wood base */
+    linear-gradient(180deg, #7a2a1a 0%, #6a2215 25%, #5a1a10 50%, #4a1408 75%, #5a1a10 100%);
+  border-radius: 2px;
+  box-shadow:
+    0 3px 0 #2a0a04,
+    0 4px 0 #1a0602,
+    inset 1px 1px 0 rgba(200,120,80,0.2),
+    inset -1px -1px 0 rgba(0,0,0,0.2);
+  /* Irregular pixel edges via stepped clip-path */
+  clip-path: polygon(
+    0% 3px, 2px 0%, 4px 1px, 8px 0%, calc(100% - 8px) 0%, calc(100% - 4px) 1px, calc(100% - 2px) 0%, 100% 3px,
+    100% calc(100% - 3px), calc(100% - 2px) 100%, calc(100% - 4px) calc(100% - 1px), calc(100% - 8px) 100%,
+    8px 100%, 4px calc(100% - 1px), 2px 100%, 0% calc(100% - 3px)
+  );
+}
+
+.wood-btn:hover {
+  transform: translateY(-2px);
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px),
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 7px,
+      rgba(255,200,150,0.06) 7px, rgba(255,200,150,0.06) 8px),
+    linear-gradient(180deg, #8a3220 0%, #7a2a18 25%, #6a2210 50%, #5a1a0a 75%, #6a2210 100%);
+  box-shadow:
+    0 5px 0 #2a0a04,
+    0 6px 0 #1a0602,
+    inset 1px 1px 0 rgba(200,120,80,0.25),
+    inset -1px -1px 0 rgba(0,0,0,0.2);
+}
+.wood-btn:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 #2a0a04,
+    inset 1px 1px 0 rgba(0,0,0,0.15),
+    inset -1px -1px 0 rgba(200,120,80,0.1);
+}
+
+.wood-btn--play {
+  width: 100%;
+  max-width: 360px;
+  padding: 1.1rem 2rem;
+  font-size: 2rem;
+  letter-spacing: 0.04em;
+  margin-top: 0.8rem;
+  /* Same dark red weathered wood, slightly brighter for emphasis */
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(0,0,0,0.06) 3px, rgba(0,0,0,0.06) 4px),
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 7px,
+      rgba(255,200,150,0.05) 7px, rgba(255,200,150,0.05) 8px),
+    linear-gradient(180deg, #8a3220 0%, #7a2818 25%, #6a2010 50%, #5a1808 75%, #6a2010 100%);
+  box-shadow:
+    0 4px 0 #2a0a04,
+    0 5px 0 #1a0602,
+    0 8px 20px rgba(40,8,0,0.5),
+    inset 1px 1px 0 rgba(220,140,100,0.2),
+    inset -1px -1px 0 rgba(0,0,0,0.2);
+  /* Nail details via pseudo */
+}
+.wood-btn--play::before,
+.wood-btn--play::after {
+  content: '';
+  position: absolute;
+  width: 6px; height: 6px;
+  background: radial-gradient(circle at 35% 35%, #aaa, #666);
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+}
+.wood-btn--play::before { left: 14px; }
+.wood-btn--play::after  { right: 14px; }
+
+.wood-btn--play:active {
+  box-shadow:
+    0 1px 0 #2a0a04,
+    0 2px 6px rgba(40,8,0,0.3),
+    inset 1px 1px 0 rgba(0,0,0,0.15);
+}
+.wood-btn--play:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+  transform: none;
+}
+
+.wood-btn--small {
+  padding: 0.5rem 1rem;
+  font-size: 0.95rem;
+  font-family: "Patrick Hand", cursive;
+  width: 100%;
+  margin-top: 0.7rem;
+}
+
+/* — Mode picker — */
 .mode-fieldset {
-  margin: 1.25rem 0 0;
+  width: 100%;
+  margin: 0 0 1rem;
   padding: 0;
   border: none;
 }
 
 .mode-legend {
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #b8a08a;
   margin-bottom: 0.5rem;
   padding: 0;
 }
@@ -131,84 +308,105 @@ body.game-active {
   display: flex;
   align-items: flex-start;
   gap: 0.65rem;
-  padding: 0.75rem 0.85rem;
-  background: #1a120b;
-  border: 1px solid #5a4030;
-  border-radius: 8px;
+  padding: 0.8rem 1rem;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(80,40,10,0.04) 3px, rgba(80,40,10,0.04) 4px),
+    linear-gradient(180deg, #f0ddb8, #e4ccaa);
+  border: 3px solid #5a2810;
+  border-radius: 2px;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.12s, transform 0.1s;
+  box-shadow: 0 2px 0 #3a1808, inset 1px 1px 0 rgba(255,240,200,0.2);
 }
 
 .mode-option:hover:not(.mode-option--disabled) {
-  border-color: #7a6050;
-  background: #261a10;
+  border-color: #3a1005;
+  transform: translateY(-1px);
 }
 
 .mode-option--selected {
-  border-color: #d4a24c;
-  background: #261a10;
-  box-shadow: 0 0 0 1px rgba(212, 162, 76, 0.35);
+  border-color: #2a0804 !important;
+  box-shadow: 0 2px 0 #3a1808, inset 0 0 0 1px rgba(90,32,12,0.3);
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(80,40,10,0.04) 3px, rgba(80,40,10,0.04) 4px),
+    linear-gradient(180deg, #f8e8c8, #f0d8b0);
 }
 
 .mode-option--disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .mode-option input {
-  margin-top: 0.2rem;
-  accent-color: #d4a24c;
+  margin-top: 0.25rem;
+  accent-color: #7a4a18;
+  width: 18px; height: 18px;
 }
 
-.mode-option-body {
-  flex: 1;
-  min-width: 0;
-}
+.mode-option-body { flex: 1; min-width: 0; }
 
 .mode-option-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: #f0e6d8;
+  font-family: "Patrick Hand", cursive;
+  font-weight: 400;
+  font-size: 1.1rem;
+  color: #3a1a05;
 }
 
 .mode-option-desc {
-  margin: 0.2rem 0 0;
+  margin: 0.15rem 0 0;
   font-size: 0.8rem;
   line-height: 1.35;
-  color: #b8a08a;
+  color: #6a4525;
 }
 
 .mode-badge {
   display: inline-block;
-  margin-left: 0.35rem;
+  margin-left: 0.4rem;
   padding: 0.1rem 0.4rem;
-  font-size: 0.65rem;
-  font-weight: 700;
+  font-family: "Nunito", sans-serif;
+  font-size: 0.6rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #f5c96a;
-  background: rgba(245, 201, 106, 0.12);
-  border-radius: 4px;
+  letter-spacing: 0.06em;
+  color: #8a5520;
+  background: rgba(138,85,32,0.15);
+  border: 1.5px solid rgba(138,85,32,0.3);
+  border-radius: 5px;
   vertical-align: middle;
 }
 
+/* — Keybind section — */
 .keybind-details {
-  margin-top: 1rem;
-  padding: 0.75rem 0.85rem;
-  background: #1a120b;
-  border: 1px solid #5a4030;
-  border-radius: 8px;
+  width: 100%;
+  margin-top: 0.3rem;
+  margin-bottom: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  background:
+    repeating-linear-gradient(0deg,
+      transparent 0px, transparent 3px,
+      rgba(80,40,10,0.04) 3px, rgba(80,40,10,0.04) 4px),
+    linear-gradient(180deg, #e8d0a8, #dcc498);
+  border: 3px solid #5a2810;
+  border-radius: 2px;
+  box-shadow: 0 2px 0 #3a1808, inset 1px 1px 0 rgba(255,240,200,0.2);
 }
 
 .keybind-summary {
   cursor: pointer;
-  font-weight: 600;
-  color: #e8d4b8;
+  font-family: "Patrick Hand", cursive;
+  font-size: 1.1rem;
+  color: #3a1a05;
 }
 
 .keybind-hint {
-  margin-top: 0.65rem;
+  margin-top: 0.6rem;
   margin-bottom: 0.5rem;
+  color: #6a4525;
+  text-shadow: none;
 }
 
 .keybind-panel {
@@ -218,19 +416,18 @@ body.game-active {
 }
 
 .keybind-seat {
-  border-top: 1px solid #3d2e20;
+  border-top: 2px solid rgba(120,80,30,0.2);
   padding-top: 0.65rem;
 }
-
 .keybind-seat:first-child {
   border-top: none;
   padding-top: 0;
 }
 
 .keybind-seat-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #d4a24c;
+  font-size: 0.85rem;
+  font-family: "Patrick Hand", cursive;
+  color: #6a4020;
   margin: 0 0 0.45rem;
 }
 
@@ -242,19 +439,18 @@ body.game-active {
   margin-bottom: 0.35rem;
   font-size: 0.82rem;
 }
-
 .keybind-row label {
-  color: #b8a08a;
+  color: #6a4525;
   text-transform: capitalize;
 }
 
 .keybind-bind {
   padding: 0.35rem 0.5rem;
   font-size: 0.78rem;
-  color: #f0e6d8;
-  background: #261a10;
-  border: 1px solid #5a4030;
-  border-radius: 6px;
+  color: #3a1a05;
+  background: rgba(255,240,210,0.5);
+  border: 2px solid #5a2810;
+  border-radius: 2px;
   cursor: pointer;
   text-align: left;
   display: flex;
@@ -262,76 +458,44 @@ body.game-active {
   gap: 0.3rem;
   align-items: center;
 }
-
-.keybind-bind:hover {
-  border-color: #7a6050;
-}
-
+.keybind-bind:hover { border-color: #3a1005; }
 .keybind-bind.is-capturing {
-  border-color: #d4a24c;
-  box-shadow: 0 0 0 2px rgba(212, 162, 76, 0.25);
+  border-color: #2a0804;
+  box-shadow: 0 0 0 2px rgba(90,32,12,0.25);
 }
 
 .keybind-chip {
   display: inline-block;
-  padding: 0.12rem 0.35rem;
-  background: #1a120b;
+  padding: 0.12rem 0.4rem;
+  background: rgba(0,0,0,0.08);
   border-radius: 4px;
   font-family: ui-monospace, monospace;
 }
 
-.btn-reset-keybinds {
-  width: 100%;
-  margin-top: 0.75rem;
-}
-
-.btn-primary {
-  width: 100%;
-  margin-top: 1.25rem;
-  padding: 0.75rem 1rem;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1a120b;
-  background: linear-gradient(180deg, #f5c96a 0%, #d4a24c 100%);
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(212, 162, 76, 0.35);
-}
-
-.btn-primary:hover {
-  filter: brightness(1.05);
-}
-
-.btn-primary:active {
-  transform: translateY(1px);
-}
-
-.btn-primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  filter: none;
-}
-
+/* — Error / footer — */
 .lobby-error {
-  margin: 0.75rem 0 0;
-  font-size: 0.85rem;
-  color: #e07060;
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ff4040;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   text-align: center;
 }
 
-.maze-size-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
-  margin-top: 0.75rem;
+.lobby-footer {
+  margin: 1rem 0 0;
+  font-family: "Patrick Hand", cursive;
+  font-size: 0.95rem;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  opacity: 0.7;
+  text-align: center;
 }
 
-.maze-size-field .field-input {
-  width: 100%;
-}
-
-/* —— Fullscreen game —— */
+/* ================================================================
+   GAME SCREEN
+   ================================================================ */
+.screen { width: 100%; display: flex; flex-direction: column; align-items: center; }
 .screen-game {
   position: fixed;
   inset: 0;
@@ -339,8 +503,7 @@ body.game-active {
   display: flex;
   flex-direction: column;
   max-width: none;
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   min-height: 100dvh;
   padding: 0;
   padding-bottom: env(safe-area-inset-bottom, 0);
@@ -522,10 +685,7 @@ body.game-active {
   backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
 }
-
-.room-hud.hidden {
-  display: none !important;
-}
+.room-hud.hidden { display: none !important; }
 
 .room-hud-label {
   font-size: 0.68rem;
@@ -558,7 +718,6 @@ body.game-active {
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
-
 .btn-secondary:hover {
   background: #5a4030;
   border-color: #7a6050;
@@ -576,6 +735,14 @@ body.game-active {
   font-weight: 600;
   margin-right: 0.35rem;
 }
+
+.scores-bar {
+  margin-top: 0.35rem;
+  font-size: clamp(0.8rem, 2vw, 0.92rem);
+  color: #e8d8c8;
+  font-weight: 500;
+}
+.scores-bar span { margin: 0 0.45rem; }
 
 @media (max-width: 640px) {
   .game-shell {
@@ -602,8 +769,7 @@ body.game-active {
 
 #c {
   flex: 1;
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   min-height: 0;
   display: block;
   background: #1a120b;
@@ -611,4 +777,28 @@ body.game-active {
   border-radius: 0;
   box-shadow: none;
   touch-action: none;
+}
+
+/* ================================================================
+   RESPONSIVE
+   ================================================================ */
+@media (max-width: 560px) {
+  .lobby-fields {
+    flex-direction: column;
+    gap: 0;
+  }
+  .title-text { font-size: 44px; stroke-width: 3px; }
+  .title-shadow { font-size: 44px; }
+  .wood-btn--play { font-size: 1.6rem; padding: 0.9rem 1.5rem; }
+  .house { width: 220px; height: 160px; }
+  .house-wall { height: 110px; left: 8px; right: 8px; padding: 10px 14px; }
+  .roof { border-left-width: 128px; border-right-width: 128px; border-bottom-width: 65px; bottom: 106px; left: -18px; right: -18px; }
+  .chimney { bottom: 130px; right: 35px; width: 22px; height: 36px; }
+  .hw-window { width: 40px; height: 44px; }
+  .hw-door { width: 34px; height: 62px; }
+}
+
+@media (max-height: 700px) and (min-width: 560px) {
+  .house { transform: translateX(-50%) scale(0.75); transform-origin: bottom center; }
+  .scene-ground { height: 20%; }
 }

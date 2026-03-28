@@ -4,93 +4,125 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Family Trouble</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Patrick+Hand&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main id="screen-lobby" class="screen" aria-label="Join game">
-      <div class="lobby-card">
-        <h1 class="lobby-title">Family Trouble</h1>
-        <p class="lobby-tagline">
-          Settle the family dispute the old-fashioned way — in a house full of hallways and nowhere to hide.
-          Share the <strong>room code</strong> to invite family members.
-        </p>
+    <!-- Pixel-art background canvas -->
+    <canvas id="house-bg" class="scene-canvas"></canvas>
+    <script src="/menu-bg.js"></script>
 
-        <label class="field-label" for="name-input">Display name</label>
-        <input
-          id="name-input"
-          class="field-input"
-          type="text"
-          maxlength="24"
-          autocomplete="username"
-          placeholder="Your name"
-        />
+    <!-- ====== LOBBY (no box, free-floating) ====== -->
+    <main id="screen-lobby" class="lobby" aria-label="Join game">
 
-        <label class="field-label" for="room-input">Room code</label>
-        <p class="field-hint">Leave empty to <strong>create</strong> a new room, or enter a 6-character code to <strong>join</strong>.</p>
-        <input
-          id="room-input"
-          class="field-input room-input"
-          type="text"
-          maxlength="6"
-          spellcheck="false"
-          autocomplete="off"
-          placeholder="e.g. K7P4M2"
-        />
-
-        <br>
-        <br>
-        <hr>
-
-        <fieldset class="mode-fieldset">
-          <legend class="mode-legend">Game mode</legend>
-          <div id="mode-options" class="mode-options"></div>
-        </fieldset>
-
-        <br>
-        <hr>
-        <br>
-
-        <label class="field-label" for="local-players-select">Players on this device</label>
-        <p class="field-hint">
-          <strong>1</strong> — online from this machine (or open other tabs / invite with the room code).<br>
-          <strong>2–4</strong> — couch co-op: extra players on the same keyboard (see controls in-game).
-        </p>
-        <select id="local-players-select" class="field-input" aria-label="Number of local players">
-          <option value="1">1 — one keyboard (defaults: WASD / arrows + Space)</option>
-          <option value="2">2 — couch (defaults per seat below)</option>
-          <option value="3">3 — couch + IJKL</option>
-          <option value="4">4 — couch + numpad</option>
-        </select>
-
-        <div class="maze-size-row">
-          <div class="maze-size-field">
-            <label class="field-label" for="maze-cols">Maze columns</label>
-            <input id="maze-cols" class="field-input" type="number" min="6" max="16" value="10" />
-          </div>
-          <div class="maze-size-field">
-            <label class="field-label" for="maze-rows">Maze rows</label>
-            <input id="maze-rows" class="field-input" type="number" min="5" max="12" value="7" />
-          </div>
-        </div>
-        <p class="field-hint">Used when you <strong>create</strong> a room (host). Joiners use the host layout.</p>
-
-        <details class="keybind-details">
-          <summary class="keybind-summary">Customize keyboard (per seat)</summary>
-          <p class="field-hint keybind-hint">
-            Click a control, then press a key. Hold <strong>Alt</strong> while pressing to add a second key for the same action (for example WASD and arrows together). Escape cancels.
-          </p>
-          <div id="keybind-panel" class="keybind-panel" aria-label="Keyboard bindings"></div>
-          <button type="button" id="btn-reset-keybinds" class="btn-secondary btn-reset-keybinds">
-            Reset all bindings to defaults
-          </button>
-        </details>
-
-        <p id="lobby-error" class="lobby-error" role="alert" hidden></p>
-
-        <button type="button" id="btn-play" class="btn-primary">Play</button>
+      <!-- Big semicircular title -->
+      <div class="title-arc">
+        <svg viewBox="0 0 600 200" class="title-svg">
+          <defs>
+            <path id="arc" d="M 30,180 Q 300,20 570,180" />
+          </defs>
+          <text class="title-shadow">
+            <textPath href="#arc" startOffset="50%" text-anchor="middle">Family Trouble</textPath>
+          </text>
+          <text class="title-text">
+            <textPath href="#arc" startOffset="50%" text-anchor="middle">Family Trouble</textPath>
+          </text>
+        </svg>
       </div>
+
+      <p class="lobby-tagline">
+        Settle the family dispute the old-fashioned way &mdash;
+        in a house full of hallways and nowhere to hide!
+      </p>
+
+      <!-- Inputs row -->
+      <div class="lobby-fields">
+        <div class="wood-field">
+          <label class="wood-label" for="name-input">Your Name</label>
+          <input
+            id="name-input"
+            class="wood-input"
+            type="text"
+            maxlength="24"
+            autocomplete="username"
+            placeholder="Who are you?"
+          />
+        </div>
+
+        <div class="wood-field">
+          <label class="wood-label" for="room-input">Room Code</label>
+          <p class="wood-hint">Leave empty to create a new room, or enter a code to join.</p>
+          <input
+            id="room-input"
+            class="wood-input room-input"
+            type="text"
+            maxlength="6"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="e.g. K7P4M2"
+          />
+        </div>
+      </div>
+
+      <!-- Mode picker -->
+      <fieldset class="mode-fieldset">
+        <legend class="wood-label mode-legend">Game Mode</legend>
+        <div id="mode-options" class="mode-options"></div>
+      </fieldset>
+
+      <!-- Player count -->
+      <div class="wood-field">
+        <label class="wood-label" for="local-players-select">Players on this device</label>
+        <p class="wood-hint">
+          <strong>1</strong> &mdash; online &nbsp;|&nbsp;
+          <strong>2&ndash;4</strong> &mdash; couch co-op on one keyboard
+        </p>
+        <select id="local-players-select" class="wood-input" aria-label="Number of local players">
+          <option value="1">1 &mdash; solo keyboard (WASD / arrows + Space)</option>
+          <option value="2">2 &mdash; couch co-op</option>
+          <option value="3">3 &mdash; couch + IJKL</option>
+          <option value="4">4 &mdash; couch + numpad</option>
+        </select>
+      </div>
+
+      <!-- Maze size -->
+      <div class="lobby-fields">
+        <div class="wood-field">
+          <label class="wood-label" for="maze-cols">Maze Columns</label>
+          <input id="maze-cols" class="wood-input" type="number" min="6" max="16" value="10" />
+        </div>
+        <div class="wood-field">
+          <label class="wood-label" for="maze-rows">Maze Rows</label>
+          <input id="maze-rows" class="wood-input" type="number" min="5" max="12" value="7" />
+        </div>
+      </div>
+      <p class="wood-hint" style="text-align:center; margin-bottom:0.8rem;">Used when you create a room (host). Joiners use the host layout.</p>
+
+      <!-- Keybind settings -->
+      <details class="keybind-details">
+        <summary class="keybind-summary">Customize keyboard (per seat)</summary>
+        <p class="wood-hint keybind-hint">
+          Click a control, then press a key. Hold <strong>Alt</strong> to add a second key. Escape cancels.
+        </p>
+        <div id="keybind-panel" class="keybind-panel" aria-label="Keyboard bindings"></div>
+        <button type="button" id="btn-reset-keybinds" class="wood-btn wood-btn--small">
+          Reset all bindings
+        </button>
+      </details>
+
+      <p id="lobby-error" class="lobby-error" role="alert" hidden></p>
+
+      <!-- Big play button -->
+      <button type="button" id="btn-play" class="wood-btn wood-btn--play">
+        Let's Go!
+      </button>
+
+      <p class="lobby-footer">Share the room code to invite family members!</p>
     </main>
 
+    <!-- ====== GAME SCREEN ====== -->
     <div id="screen-game" class="screen screen-game hidden">
       <div class="game-shell">
         <aside id="leaderboard-panel" class="leaderboard-panel" aria-label="Leaderboard">
@@ -106,7 +138,8 @@
               <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
               <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
             </div>
-            <p id="game-hint" class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
+            <p id="game-hint" class="hint game-hint">WASD / arrows &mdash; move &amp; turn &middot; Space &mdash; fire</p>
+            <div id="scores" class="scores-bar"></div>
           </header>
           <div id="canvas-wrap" class="canvas-wrap">
             <canvas id="c" aria-label="Game"></canvas>
