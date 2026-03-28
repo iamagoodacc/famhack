@@ -70,7 +70,7 @@ io.on("connection", (socket) => {
   const rawRoom = String(socket.handshake.query?.room ?? "new").trim().toLowerCase();
   let roomCode;
 
-  const mazeDims = normalizeMazeDims(socket.handshake.query?.mazeCols, socket.handshake.query?.mazeRows);
+  const mazeDims = normalizeMazeDims();
 
   if (rawRoom === "" || rawRoom === "new" || rawRoom === "create") {
     roomCode = generateRoomCode();

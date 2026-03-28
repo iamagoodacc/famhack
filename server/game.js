@@ -29,8 +29,6 @@ const PLAYER_BULLET_DAMAGE = 34;
 const ENEMY_MAX_HP = 90;
 /** Family Feud (arena): delay before respawn after elimination. */
 const ARENA_RESPAWN_DELAY_MS = 2800;
-/** Arena: first to this many kills regenerates the maze and clears scores. */
-const ARENA_KILL_LIMIT = 30;
 const DEFAULT_MAZE_COLS = 10;
 const DEFAULT_MAZE_ROWS = 7;
 const MIN_MAZE_COLS = 6;
@@ -435,7 +433,6 @@ export class GameRoom {
     this._rng = Math.random;
     this._nextEnemySlot = 0;
     this.explosions = [];
-    this.arenaResetBanner = null;
     this.dmRound = 1;
     const generated = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this.walls = generated.walls;
@@ -452,28 +449,9 @@ export class GameRoom {
     this.maze = generated.maze;
   }
 
-  _regenerateMazeAndRepositionPlayers() {
-    const gen = generateMaze(this._rng, this.mazeCols, this.mazeRows);
-    this._applyMazeFromGenerated(gen);
-    this.bullets = [];
-    this.explosions = [];
-    for (const p of this.players.values()) {
-      this._respawnTankAtRandom(p);
-      p.respawnAt = 0;
-    }
-  }
-
-  /** Arena: someone reached kill limit — new maze, everyone score 0. */
-  _arenaKillLimitReset(championId) {
-    for (const p of this.players.values()) {
-      p.score = 0;
-    }
-    this._regenerateMazeAndRepositionPlayers();
-    this.arenaResetBanner = { winnerId: championId, until: Date.now() + 4500 };
-  }
-
   /** Deathmatch: one survivor; new round, +1 round win already applied to survivor. */
   _deathmatchNextRound() {
+    if (this.mode !== "deathmatch") return;
     const gen = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this._applyMazeFromGenerated(gen);
     this.bullets = [];
@@ -486,26 +464,21 @@ export class GameRoom {
   }
 
   _deathmatchTryEndRound() {
-    if (this.mode !== "deathmatch") return;
     if (this.players.size < 2) return;
+    /** Arena: eliminated players have respawnAt > 0 until they respawn. Deathmatch elims use respawnAt 0.
+     *  Without this guard, “exactly one survivor” matches arena (one dead, one alive) and could end a DM round. */
+    if ([...this.players.values()].some((p) => !p.alive && (p.respawnAt || 0) > 0)) return;
     const alive = [...this.players.values()].filter((p) => p.alive);
     if (alive.length !== 1) return;
+    if (this.mode !== "deathmatch") return;
     alive[0].score += 1;
     this._deathmatchNextRound();
-  }
-
-  _maybeArenaKillLimit(killer) {
-    if (this.mode !== "arena" || !killer) return;
-    if (killer.score >= ARENA_KILL_LIMIT) {
-      this._arenaKillLimitReset(killer.id);
-    }
   }
 
   _onPlayerHpDepleted(p, killer, now) {
     if (this.mode !== "deathmatch") {
       if (killer && killer.id !== p.id) {
         killer.score += 1;
-        this._maybeArenaKillLimit(killer);
       }
     }
     this.deathEvents += 1;
@@ -832,10 +805,6 @@ export class GameRoom {
   step(now) {
     this.tick++;
 
-    if (this.arenaResetBanner && now > (this.arenaResetBanner.until || 0)) {
-      this.arenaResetBanner = null;
-    }
-
     for (const p of this.players.values()) {
       if (!p.alive && (p.respawnAt || 0) > 0 && now >= p.respawnAt) {
         this._respawnTankAtRandom(p);
@@ -1033,8 +1002,6 @@ export class GameRoom {
       })),
       deathEvents: this.deathEvents,
       tick: this.tick,
-      arenaResetBanner: this.arenaResetBanner,
-      arenaKillLimit: ARENA_KILL_LIMIT,
       arenaRespawnDelayMs: ARENA_RESPAWN_DELAY_MS,
     };
     if (this.mode === "deathmatch") {

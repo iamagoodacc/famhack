@@ -4,7 +4,7 @@ const GAME_MODES = [
     id: "arena",
     label: "Family Feud",
     description:
-      "FFA with respawn delay, HP, and random guns. Your own shots cannot hurt you. First to 30 kills resets the whole map and scores.",
+      "FFA with respawn delay, HP, and random guns. Your own shots cannot hurt you. Kills add to your score; the maze stays the same.",
     available: true,
   },
   {
@@ -40,9 +40,6 @@ const STORAGE_MODE = "famhack_mode";
 const STORAGE_ROOM = "famhack_room";
 const STORAGE_LOCAL = "famhack_local_players";
 const STORAGE_KEYBINDS = "famhack_keybinds_v1";
-const STORAGE_MAZE_COLS = "famhack_maze_cols";
-const STORAGE_MAZE_ROWS = "famhack_maze_rows";
-
 const BIND_ACTIONS = ["forward", "back", "left", "right", "fire"];
 
 const ROOM_CODE_LEN = 6;
@@ -52,8 +49,6 @@ const ctx = canvas.getContext("2d");
 const canvasWrap = document.getElementById("canvas-wrap");
 const leaderboardBody = document.getElementById("leaderboard-body");
 const leaderboardMeta = document.getElementById("leaderboard-meta");
-const mazeColsInput = document.getElementById("maze-cols");
-const mazeRowsInput = document.getElementById("maze-rows");
 const screenLobby = document.getElementById("screen-lobby");
 const screenGame = document.getElementById("screen-game");
 const nameInput = document.getElementById("name-input");
@@ -491,13 +486,6 @@ if (savedName) nameInput.value = savedName;
 
 buildModeOptions();
 
-if (mazeColsInput && mazeRowsInput) {
-  const sc = localStorage.getItem(STORAGE_MAZE_COLS);
-  const sr = localStorage.getItem(STORAGE_MAZE_ROWS);
-  if (sc) mazeColsInput.value = sc;
-  if (sr) mazeRowsInput.value = sr;
-}
-
 if (localPlayersSelect) {
   const savedLoc = localStorage.getItem(STORAGE_LOCAL);
   if (savedLoc) {
@@ -528,21 +516,8 @@ function setRoomHud(code) {
   roomHud.classList.remove("hidden");
 }
 
-function readMazeFromUi() {
-  const cols = String(mazeColsInput?.value ?? localStorage.getItem(STORAGE_MAZE_COLS) ?? "10").trim() || "10";
-  const rows = String(mazeRowsInput?.value ?? localStorage.getItem(STORAGE_MAZE_ROWS) ?? "7").trim() || "7";
-  return { mazeCols: cols, mazeRows: rows };
-}
-
-function persistMazeFromUi() {
-  const { mazeCols, mazeRows } = readMazeFromUi();
-  localStorage.setItem(STORAGE_MAZE_COLS, mazeCols);
-  localStorage.setItem(STORAGE_MAZE_ROWS, mazeRows);
-}
-
 function buildSocketQuery(nameStr, mode, roomStr) {
-  const { mazeCols, mazeRows } = readMazeFromUi();
-  return { name: nameStr, mode, room: roomStr, mazeCols, mazeRows };
+  return { name: nameStr, mode, room: roomStr };
 }
 
 function buildInviteUrl() {
@@ -551,9 +526,6 @@ function buildInviteUrl() {
   const n = nameInput.value.trim();
   if (n) u.searchParams.set("name", n);
   u.searchParams.set("mode", selectedModeId);
-  const { mazeCols, mazeRows } = readMazeFromUi();
-  u.searchParams.set("mazeCols", mazeCols);
-  u.searchParams.set("mazeRows", mazeRows);
   const loc = readLocalPlayersFromUi();
   if (loc > 1) u.searchParams.set("locals", String(loc));
   else u.searchParams.delete("locals");
@@ -748,12 +720,8 @@ function onStateMessage(snap) {
 function onRoomJoinedFirstTime(code, name, mode) {
   setRoomHud(code);
   localStorage.setItem(STORAGE_ROOM, code);
-  persistMazeFromUi();
   const params = new URLSearchParams({ name, mode, room: code });
   if (localPlayerCount > 1) params.set("locals", String(localPlayerCount));
-  const { mazeCols, mazeRows } = readMazeFromUi();
-  params.set("mazeCols", mazeCols);
-  params.set("mazeRows", mazeRows);
   history.replaceState(null, "", `${window.location.pathname}?${params}`);
   enterGame();
 }
@@ -887,7 +855,6 @@ function startFromLobby() {
 
   localStorage.setItem(STORAGE_NAME, name);
   localStorage.setItem(STORAGE_MODE, selectedModeId);
-  persistMazeFromUi();
 
   btnPlay.disabled = true;
   connect(name, selectedModeId, roomQuery);
@@ -927,10 +894,6 @@ if (quickLocals && localPlayersSelect) {
   const nl = Number(quickLocals);
   if (nl >= 1 && nl <= 4) localPlayersSelect.value = String(nl);
 }
-const quickMazeCols = params.get("mazeCols")?.trim();
-const quickMazeRows = params.get("mazeRows")?.trim();
-if (quickMazeCols && mazeColsInput) mazeColsInput.value = quickMazeCols.slice(0, 4);
-if (quickMazeRows && mazeRowsInput) mazeRowsInput.value = quickMazeRows.slice(0, 4);
 if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
@@ -976,14 +939,11 @@ function hpBarClass(ratio) {
 function renderLeaderboard(snap) {
   if (!leaderboardBody || !leaderboardMeta) return;
 
-  const serverNow = Number(snap.serverNow) || Date.now();
+  const clock = estimatedServerClock();
   const rows = snap.players?.length ? [...snap.players] : [];
   rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || String(a.name).localeCompare(String(b.name)));
 
   const metaParts = [];
-  if (snap.mazeCols != null && snap.mazeRows != null) {
-    metaParts.push(`Maze ${snap.mazeCols}×${snap.mazeRows}`);
-  }
   if (snap.mode === "pve") {
     const w = snap.pveWave ?? 1;
     let line = `Wave ${w}`;
@@ -996,17 +956,6 @@ function renderLeaderboard(snap) {
   }
   if (snap.mode === "deathmatch" && snap.dmRound != null) {
     metaParts.push(`Round ${snap.dmRound}`);
-  }
-  if (snap.mode === "arena" && snap.arenaKillLimit != null) {
-    metaParts.push(`Reset at ${snap.arenaKillLimit} kills`);
-  }
-  if (snap.arenaResetBanner && serverNow < Number(snap.arenaResetBanner.until || 0)) {
-    const wid = snap.arenaResetBanner.winnerId;
-    const winner = rows.find((p) => p.id === wid);
-    const lim = snap.arenaKillLimit ?? 30;
-    metaParts.push(
-      `<span class="lb-flash">${escapeHtml(winner?.name ?? "Winner")} hit ${lim} — new maze!</span>`
-    );
   }
   leaderboardMeta.innerHTML = metaParts.join(" · ");
 
