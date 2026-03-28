@@ -3,17 +3,36 @@ const GAME_MODES = [
   {
     id: "arena",
     label: "Family Feud",
-    description: "Random house layout, free-for-all. Bullets bounce off walls.",
+    description:
+      "FFA with respawn delay, HP, and random guns. Your own shots cannot hurt you. First to 30 kills resets the whole map and scores.",
     available: true,
   },
   {
     id: "pve",
     label: "Intruders (PvE)",
     description:
-      "Wave-based co-op vs bots (A* pathfinding). Clear the wave, short break, then the next. No friendly fire or self-hits from your shots.",
+      "Wave co-op vs bots (A*). Your shots do not hurt family; only intruders do. Clear waves for breaks.",
     available: true,
   },
-
+  {
+    id: "deathmatch",
+    label: "Deathmatch",
+    description:
+      "One life per round. ELIM = spectate until one player is left; they win the round and everyone respawns on a new maze.",
+    available: true,
+  },
+  {
+    id: "teams",
+    label: "Family Teams",
+    description: "Pick sides in the family dispute. Friendly fire off.",
+    available: false,
+  },
+  {
+    id: "survival",
+    label: "Home Invasion",
+    description: "Survive waves of intruders in your family home.",
+    available: false,
+  },
 ];
 
 const STORAGE_NAME = "famhack_name";
@@ -21,6 +40,8 @@ const STORAGE_MODE = "famhack_mode";
 const STORAGE_ROOM = "famhack_room";
 const STORAGE_LOCAL = "famhack_local_players";
 const STORAGE_KEYBINDS = "famhack_keybinds_v1";
+const STORAGE_MAZE_COLS = "famhack_maze_cols";
+const STORAGE_MAZE_ROWS = "famhack_maze_rows";
 
 const BIND_ACTIONS = ["forward", "back", "left", "right", "fire"];
 
@@ -29,7 +50,10 @@ const ROOM_CODE_LEN = 6;
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 const canvasWrap = document.getElementById("canvas-wrap");
-const scoresEl = document.getElementById("scores");
+const leaderboardBody = document.getElementById("leaderboard-body");
+const leaderboardMeta = document.getElementById("leaderboard-meta");
+const mazeColsInput = document.getElementById("maze-cols");
+const mazeRowsInput = document.getElementById("maze-rows");
 const screenLobby = document.getElementById("screen-lobby");
 const screenGame = document.getElementById("screen-game");
 const nameInput = document.getElementById("name-input");
@@ -54,6 +78,10 @@ const localIds = new Set();
 
 let socket = null;
 let state = null;
+/** Wall time when `state` was last applied (for aligning with `serverNow`). */
+let lastStateReceiveMs = 0;
+/** `serverNow` from the last snapshot. */
+let lastServerNow = 0;
 let gameActive = false;
 let selectedModeId = "arena";
 let currentRoomCode = null;
@@ -463,6 +491,13 @@ if (savedName) nameInput.value = savedName;
 
 buildModeOptions();
 
+if (mazeColsInput && mazeRowsInput) {
+  const sc = localStorage.getItem(STORAGE_MAZE_COLS);
+  const sr = localStorage.getItem(STORAGE_MAZE_ROWS);
+  if (sc) mazeColsInput.value = sc;
+  if (sr) mazeRowsInput.value = sr;
+}
+
 if (localPlayersSelect) {
   const savedLoc = localStorage.getItem(STORAGE_LOCAL);
   if (savedLoc) {
@@ -493,12 +528,32 @@ function setRoomHud(code) {
   roomHud.classList.remove("hidden");
 }
 
+function readMazeFromUi() {
+  const cols = String(mazeColsInput?.value ?? localStorage.getItem(STORAGE_MAZE_COLS) ?? "10").trim() || "10";
+  const rows = String(mazeRowsInput?.value ?? localStorage.getItem(STORAGE_MAZE_ROWS) ?? "7").trim() || "7";
+  return { mazeCols: cols, mazeRows: rows };
+}
+
+function persistMazeFromUi() {
+  const { mazeCols, mazeRows } = readMazeFromUi();
+  localStorage.setItem(STORAGE_MAZE_COLS, mazeCols);
+  localStorage.setItem(STORAGE_MAZE_ROWS, mazeRows);
+}
+
+function buildSocketQuery(nameStr, mode, roomStr) {
+  const { mazeCols, mazeRows } = readMazeFromUi();
+  return { name: nameStr, mode, room: roomStr, mazeCols, mazeRows };
+}
+
 function buildInviteUrl() {
   const u = new URL(window.location.href);
   u.searchParams.set("room", currentRoomCode);
   const n = nameInput.value.trim();
   if (n) u.searchParams.set("name", n);
   u.searchParams.set("mode", selectedModeId);
+  const { mazeCols, mazeRows } = readMazeFromUi();
+  u.searchParams.set("mazeCols", mazeCols);
+  u.searchParams.set("mazeRows", mazeRows);
   const loc = readLocalPlayersFromUi();
   if (loc > 1) u.searchParams.set("locals", String(loc));
   else u.searchParams.delete("locals");
@@ -585,6 +640,28 @@ function emitInput() {
 
 setInterval(emitInput, 1000 / 30);
 
+let gameRafId = 0;
+let leaderboardTickerId = 0;
+
+function gameFrameLoop() {
+  gameRafId = 0;
+  if (!gameActive) return;
+  if (state) draw();
+  gameRafId = requestAnimationFrame(gameFrameLoop);
+}
+
+function startGameFrameLoop() {
+  if (gameRafId) return;
+  gameRafId = requestAnimationFrame(gameFrameLoop);
+}
+
+function stopGameFrameLoop() {
+  if (gameRafId) {
+    cancelAnimationFrame(gameRafId);
+    gameRafId = 0;
+  }
+}
+
 function enterGame() {
   keybindCapture = null;
   screenLobby.classList.add("hidden");
@@ -595,12 +672,23 @@ function enterGame() {
   gameActive = true;
   updateGameHint();
   tryStartMusic();
+  startGameFrameLoop();
+  if (!leaderboardTickerId) {
+    leaderboardTickerId = window.setInterval(() => {
+      if (gameActive && state) renderLeaderboard(state);
+    }, 250);
+  }
   queueMicrotask(() => state && draw());
 }
 
 function leaveGameUi() {
   keybindCapture = null;
   gameActive = false;
+  stopGameFrameLoop();
+  if (leaderboardTickerId) {
+    clearInterval(leaderboardTickerId);
+    leaderboardTickerId = 0;
+  }
   stopMusic();
   document.body.classList.remove("game-active");
   roomHud.classList.add("hidden");
@@ -618,6 +706,11 @@ const resizeObserver = new ResizeObserver(() => {
   if (gameActive && state) draw();
 });
 resizeObserver.observe(canvasWrap);
+
+function estimatedServerClock() {
+  if (!state || !lastServerNow) return Date.now();
+  return lastServerNow + (Date.now() - lastStateReceiveMs);
+}
 
 function onStateMessage(snap) {
   const deathEvents = Number(snap?.deathEvents || 0);
@@ -641,16 +734,22 @@ function onStateMessage(snap) {
     prevMyBulletIds = new Set();
   }
 
+  lastStateReceiveMs = Date.now();
+  lastServerNow = Number(snap.serverNow) || lastStateReceiveMs;
   state = snap;
-  renderScores(snap);
+  renderLeaderboard(snap);
   draw();
 }
 
 function onRoomJoinedFirstTime(code, name, mode) {
   setRoomHud(code);
   localStorage.setItem(STORAGE_ROOM, code);
+  persistMazeFromUi();
   const params = new URLSearchParams({ name, mode, room: code });
   if (localPlayerCount > 1) params.set("locals", String(localPlayerCount));
+  const { mazeCols, mazeRows } = readMazeFromUi();
+  params.set("mazeCols", mazeCols);
+  params.set("mazeRows", mazeRows);
   history.replaceState(null, "", `${window.location.pathname}?${params}`);
   enterGame();
 }
@@ -672,7 +771,7 @@ function connectSingle(name, mode, roomQuery) {
   disconnectAll();
   localPlayerCount = 1;
   initKeysSlots();
-  const s = io({ query: { name: localPlayerNameForSlot(name, 0), mode, room: roomQuery } });
+  const s = io({ query: buildSocketQuery(localPlayerNameForSlot(name, 0), mode, roomQuery) });
   socket = s;
   connectionSlots = [{ socket: s, slot: 0 }];
 
@@ -692,7 +791,7 @@ function connectLocalHost(name, mode) {
   initKeysSlots();
   couchSlavesSpawned = false;
 
-  const primary = io({ query: { name: localPlayerNameForSlot(name, 0), mode, room: "new" } });
+  const primary = io({ query: buildSocketQuery(localPlayerNameForSlot(name, 0), mode, "new") });
   socket = primary;
   connectionSlots = [{ socket: primary, slot: 0 }];
 
@@ -704,7 +803,7 @@ function connectLocalHost(name, mode) {
     couchSlavesSpawned = true;
     onRoomJoinedFirstTime(code, name, mode);
     for (let i = 1; i < localPlayerCount; i++) {
-      const slave = io({ query: { name: localPlayerNameForSlot(name, i), mode, room: code } });
+      const slave = io({ query: buildSocketQuery(localPlayerNameForSlot(name, i), mode, code) });
       connectionSlots.push({ socket: slave, slot: i });
       slave.on("connect", () => localIds.add(slave.id));
       slave.on("room_error", handleRoomError);
@@ -722,7 +821,7 @@ function connectLocalJoin(name, mode, roomCode) {
   let seenRoom = false;
 
   for (let i = 0; i < localPlayerCount; i++) {
-    const s = io({ query: { name: localPlayerNameForSlot(name, i), mode, room: roomCode } });
+    const s = io({ query: buildSocketQuery(localPlayerNameForSlot(name, i), mode, roomCode) });
     connectionSlots.push({ socket: s, slot: i });
     if (i === 0) socket = s;
 
@@ -784,6 +883,7 @@ function startFromLobby() {
 
   localStorage.setItem(STORAGE_NAME, name);
   localStorage.setItem(STORAGE_MODE, selectedModeId);
+  persistMazeFromUi();
 
   btnPlay.disabled = true;
   connect(name, selectedModeId, roomQuery);
@@ -823,14 +923,18 @@ if (quickLocals && localPlayersSelect) {
   const nl = Number(quickLocals);
   if (nl >= 1 && nl <= 4) localPlayersSelect.value = String(nl);
 }
+const quickMazeCols = params.get("mazeCols")?.trim();
+const quickMazeRows = params.get("mazeRows")?.trim();
+if (quickMazeCols && mazeColsInput) mazeColsInput.value = quickMazeCols.slice(0, 4);
+if (quickMazeRows && mazeRowsInput) mazeRowsInput.value = quickMazeRows.slice(0, 4);
 if (quickRoomRaw && quickRoomRaw.toLowerCase() !== "new") {
   const qr = normalizeRoomCode(quickRoomRaw);
   if (qr.length === ROOM_CODE_LEN) roomInput.value = qr;
 } else {
-  // const savedRoom = localStorage.getItem(STORAGE_ROOM);
-  // if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
-  //   roomInput.value = normalizeRoomCode(savedRoom);
-  // }
+  const savedRoom = localStorage.getItem(STORAGE_ROOM);
+  if (savedRoom && normalizeRoomCode(savedRoom).length === ROOM_CODE_LEN) {
+    roomInput.value = normalizeRoomCode(savedRoom);
+  }
 }
 const quickRoomNorm = quickRoomRaw ? normalizeRoomCode(quickRoomRaw) : "";
 const roomOkForAutoplay =
@@ -841,31 +945,96 @@ if (params.get("play") === "1" && quickName && quickModeDef && roomOkForAutoplay
   queueMicrotask(() => startFromLobby());
 }
 
-function renderScores(snap) {
-  if (!snap.players?.length) {
-    scoresEl.textContent = "";
-    return;
+function reloadSpinHtml(clock, lastFiredAt, weaponCooldownMs) {
+  const cd = Number(weaponCooldownMs) || 0;
+  const last = Number(lastFiredAt) || 0;
+  if (!last || !cd || clock >= last + cd) return "";
+  return '<span class="lb-spin" title="Weapon cooling down">&#x21BB;</span>';
+}
+
+function statusForLeaderboard(snap, p, clock) {
+  if (snap.mode === "arena" && !p.alive && (p.respawnAt || 0) > clock) {
+    const sec = Math.max(1, Math.ceil((p.respawnAt - clock) / 1000));
+    return `Respawn ${sec}s`;
   }
-  let pveBanner = "";
+  if (snap.mode === "deathmatch" && !p.alive) {
+    return "Eliminated";
+  }
+  return "";
+}
+
+function hpBarClass(ratio) {
+  if (ratio > 0.45) return "hb-ok";
+  if (ratio > 0.2) return "hb-mid";
+  return "hb-low";
+}
+
+function renderLeaderboard(snap) {
+  if (!leaderboardBody || !leaderboardMeta) return;
+
+  const serverNow = Number(snap.serverNow) || Date.now();
+  const rows = snap.players?.length ? [...snap.players] : [];
+  rows.sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || String(a.name).localeCompare(String(b.name)));
+
+  const metaParts = [];
+  if (snap.mazeCols != null && snap.mazeRows != null) {
+    metaParts.push(`Maze ${snap.mazeCols}×${snap.mazeRows}`);
+  }
   if (snap.mode === "pve") {
     const w = snap.pveWave ?? 1;
     let line = `Wave ${w}`;
     const end = Number(snap.pveIntermissionEnd || 0);
-    if (end > Date.now()) {
-      const sec = Math.max(1, Math.ceil((end - Date.now()) / 1000));
+    if (end > clock) {
+      const sec = Math.max(1, Math.ceil((end - clock) / 1000));
       line += ` — next in ${sec}s`;
     }
-    pveBanner = `<span class="scores-pve">${escapeHtml(line)}</span> `;
+    metaParts.push(escapeHtml(line));
   }
-  scoresEl.innerHTML =
-    pveBanner +
-    snap.players
-      .map((p) => {
-        const tag = localIds.has(p.id) ? " (you)" : "";
-        const weapon = p.weaponName ? ` [${escapeHtml(p.weaponName)}]` : "";
-        return `<span>${escapeHtml(p.name)}: ${p.score}${tag}${weapon}</span>`;
-      })
-      .join("");
+  if (snap.mode === "deathmatch" && snap.dmRound != null) {
+    metaParts.push(`Round ${snap.dmRound}`);
+  }
+  if (snap.mode === "arena" && snap.arenaKillLimit != null) {
+    metaParts.push(`Reset at ${snap.arenaKillLimit} kills`);
+  }
+  if (snap.arenaResetBanner && serverNow < Number(snap.arenaResetBanner.until || 0)) {
+    const wid = snap.arenaResetBanner.winnerId;
+    const winner = rows.find((p) => p.id === wid);
+    const lim = snap.arenaKillLimit ?? 30;
+    metaParts.push(
+      `<span class="lb-flash">${escapeHtml(winner?.name ?? "Winner")} hit ${lim} — new maze!</span>`
+    );
+  }
+  leaderboardMeta.innerHTML = metaParts.join(" · ");
+
+  if (!rows.length) {
+    leaderboardBody.innerHTML = "";
+    return;
+  }
+
+  const bodyHtml = rows
+    .map((p, i) => {
+      const rank = i + 1;
+      const youCls = localIds.has(p.id) ? "lb-you" : "";
+      const maxHp = Math.max(1, Number(p.maxHp) || 100);
+      const hp = Math.max(0, Math.min(maxHp, Number(p.hp) ?? maxHp));
+      const ratio = hp / maxHp;
+      const pct = Math.round(ratio * 100);
+      const spin = reloadSpinHtml(clock, p.lastFiredAt, p.weaponCooldownMs);
+      const st = statusForLeaderboard(snap, p, clock);
+      const stCell = st ? `<span class="lb-st">${escapeHtml(st)}</span>` : "—";
+      return `<tr class="${youCls}">
+  <td class="lb-rank">${rank}</td>
+  <td class="lb-name">${spin}<span>${escapeHtml(p.name)}</span>${localIds.has(p.id) ? ' <span class="lb-you-tag">you</span>' : ""}</td>
+  <td class="lb-score">${p.score ?? 0}</td>
+  <td class="lb-hp"><div class="lb-hp-bar ${hpBarClass(ratio)}" style="width:${pct}%"></div></td>
+  <td class="lb-status">${stCell}</td>
+</tr>`;
+    })
+    .join("");
+
+  leaderboardBody.innerHTML = `<table class="lb-table">
+<thead><tr><th>#</th><th>Player</th><th>Kills</th><th>HP</th><th>Status</th></tr></thead>
+<tbody>${bodyHtml}</tbody></table>`;
 }
 
 const COLORS = ["#58a6ff", "#f85149", "#d2a8ff", "#79c0ff", "#ffa657", "#7ee787"];
@@ -922,66 +1091,25 @@ function drawPlayerHealthBar(ctx, cx, topY, hp, maxHp) {
   ctx.strokeRect(x + 0.25, topY + 0.25, w - 0.5, hBar - 0.5);
 }
 
-function drawBulletSprite(ctx, b) {
-  const wt = b.weaponType || "minigun";
-  const r = Math.max(2, Number(b.radius) || 3.5);
-
-  if (wt === "shotgun") {
-    ctx.fillStyle = "#f5d28b";
-    ctx.beginPath();
-    ctx.ellipse(b.x, b.y, r * 1.2, r * 0.95, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(120,80,35,0.65)";
-    ctx.lineWidth = 0.8;
-    ctx.stroke();
-    return;
-  }
-
-  if (wt === "rocket") {
-    const ang = Math.atan2(b.vy || 0, b.vx || 1);
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(ang);
-    ctx.fillStyle = "rgba(255,130,70,0.2)";
-    ctx.beginPath();
-    ctx.ellipse(-r * 1.8, 0, r * 1.6, r * 0.9, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#6f747c";
-    ctx.fillRect(-r * 1.6, -r * 0.9, r * 2.6, r * 1.8);
-    ctx.fillStyle = "#db4d3e";
-    ctx.beginPath();
-    ctx.moveTo(r * 1.1, 0);
-    ctx.lineTo(r * 2, -r * 0.65);
-    ctx.lineTo(r * 2, r * 0.65);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  if (wt === "sniper") {
-    const ang = Math.atan2(b.vy || 0, b.vx || 1);
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(ang);
-    const lg = ctx.createLinearGradient(-r * 3, 0, r * 3, 0);
-    lg.addColorStop(0, "#9ecbff");
-    lg.addColorStop(1, "#e6f3ff");
-    ctx.fillStyle = lg;
-    ctx.fillRect(-r * 2.8, -r * 0.45, r * 5.6, r * 0.9);
-    ctx.restore();
-    return;
-  }
-
-  // Minigun default: compact tracer round.
-  ctx.fillStyle = "#c8a050";
+/** Spinning arc beside the player name while weapon cooldown is active. */
+function drawReloadSpinner(ctx, cx, nameY, name, now, lastFiredAt, weaponCooldownMs) {
+  const cd = Number(weaponCooldownMs) || 0;
+  const last = Number(lastFiredAt) || 0;
+  if (!last || !cd || now >= last + cd) return;
+  ctx.save();
+  ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
+  const tw = ctx.measureText(name).width;
+  const sx = cx + tw / 2 + 9;
+  const sy = nameY - 6;
+  const rot = (now / 150) % (Math.PI * 2);
+  ctx.translate(sx, sy);
+  ctx.rotate(rot * 1.2);
+  ctx.strokeStyle = "#7dd3fc";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#ffe8b0";
-  ctx.beginPath();
-  ctx.arc(b.x - r * 0.25, b.y - r * 0.25, Math.max(1, r * 0.45), 0, Math.PI * 2);
-  ctx.fill();
+  ctx.arc(0, 0, 5, 0.35, Math.PI * 1.65);
+  ctx.stroke();
+  ctx.restore();
 }
 
 /**
@@ -1242,30 +1370,21 @@ function draw() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
-  const explosions = state.explosions ?? [];
-  for (const ex of explosions) {
-    const maxLife = Math.max(1, Number(ex.maxLife) || 1);
-    const life = Math.max(0, Number(ex.life) || 0);
-    const t = life / maxLife;
-    const radius = (Number(ex.r) || 40) * (1 - t * 0.65);
-
-    const glow = ctx.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, radius);
-    glow.addColorStop(0, `rgba(255, 240, 175, ${0.72 * t})`);
-    glow.addColorStop(0.45, `rgba(255, 136, 52, ${0.7 * t})`);
-    glow.addColorStop(1, "rgba(120, 20, 0, 0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(ex.x, ex.y, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = `rgba(80, 70, 62, ${0.24 * t})`;
-    ctx.beginPath();
-    ctx.arc(ex.x, ex.y, radius * 0.58, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   for (const b of bullets) {
-    drawBulletSprite(ctx, b);
+    // Small solid bullet
+    ctx.fillStyle = "#c8a050";
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffe8b0";
+    ctx.beginPath();
+    ctx.arc(b.x - 0.8, b.y - 0.8, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(100,70,30,0.5)";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   const enemies = state.enemies ?? [];
@@ -1280,10 +1399,6 @@ function draw() {
     ctx.restore();
 
     const nameY = e.y - 20;
-    const eMaxHp = e.maxHp != null ? e.maxHp : 100;
-    const eHp = e.hp != null ? e.hp : eMaxHp;
-    drawPlayerHealthBar(ctx, e.x, nameY - 13, eHp, eMaxHp);
-
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
@@ -1293,8 +1408,48 @@ function draw() {
     ctx.fillText(e.name, e.x, nameY);
   }
 
+  const mode = state.mode;
+  const clock = estimatedServerClock();
+
   for (const p of players) {
     const col = colorForId(p.id);
+    const dead = p.alive === false;
+
+    if (dead && mode === "arena") {
+      const respawnAt = Number(p.respawnAt) || 0;
+      if (respawnAt > clientNow) {
+        const sec = Math.max(1, Math.ceil((respawnAt - clientNow) / 1000));
+        ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(0,0,0,0.65)";
+        const msg = `Respawn ${sec}s`;
+        ctx.strokeText(msg, p.x, p.y);
+        ctx.fillStyle = "rgba(230,220,200,0.92)";
+        ctx.fillText(msg, p.x, p.y);
+      }
+      continue;
+    }
+
+    if (dead && mode === "deathmatch") {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.globalAlpha = 0.36;
+      drawTankSprite(ctx, col, localIds.has(p.id));
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      const nameY = p.y - 26;
+      ctx.font = "600 12px Segoe UI, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.65)";
+      ctx.strokeText("Eliminated", p.x, nameY);
+      ctx.fillStyle = "rgba(230,200,200,0.88)";
+      ctx.fillText("Eliminated", p.x, nameY);
+      continue;
+    }
+
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
@@ -1313,6 +1468,7 @@ function draw() {
     ctx.strokeText(p.name, p.x, nameY);
     ctx.fillStyle = "#e6edf3";
     ctx.fillText(p.name, p.x, nameY);
+    drawReloadSpinner(ctx, p.x, nameY, p.name, clock, p.lastFiredAt, p.weaponCooldownMs);
   }
 
   ctx.restore();

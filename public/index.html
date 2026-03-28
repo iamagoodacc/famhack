@@ -25,7 +25,7 @@
           placeholder="Your name"
         />
 
-        <h1 class="field-label" for="room-input">Room code</h1>
+        <label class="field-label" for="room-input">Room code</label>
         <p class="field-hint">Leave empty to <strong>create</strong> a new room, or enter a 6-character code to <strong>join</strong>.</p>
         <input
           id="room-input"
@@ -50,7 +50,7 @@
         <hr>
         <br>
 
-        <h1 class="field-label" for="local-players-select">Players on this device</h1>
+        <label class="field-label" for="local-players-select">Players on this device</label>
         <p class="field-hint">
           <strong>1</strong> — online from this machine (or open other tabs / invite with the room code).<br>
           <strong>2–4</strong> — couch co-op: extra players on the same keyboard (see controls in-game).
@@ -61,6 +61,18 @@
           <option value="3">3 — couch + IJKL</option>
           <option value="4">4 — couch + numpad</option>
         </select>
+
+        <div class="maze-size-row">
+          <div class="maze-size-field">
+            <label class="field-label" for="maze-cols">Maze columns</label>
+            <input id="maze-cols" class="field-input" type="number" min="6" max="16" value="10" />
+          </div>
+          <div class="maze-size-field">
+            <label class="field-label" for="maze-rows">Maze rows</label>
+            <input id="maze-rows" class="field-input" type="number" min="5" max="12" value="7" />
+          </div>
+        </div>
+        <p class="field-hint">Used when you <strong>create</strong> a room (host). Joiners use the host layout.</p>
 
         <details class="keybind-details">
           <summary class="keybind-summary">Customize keyboard (per seat)</summary>
@@ -80,18 +92,26 @@
     </main>
 
     <div id="screen-game" class="screen screen-game hidden">
-      <header class="game-ui">
-        <div id="room-hud" class="room-hud hidden">
-          <span class="room-hud-label">Room</span>
-          <code id="room-code-display" class="room-code-display"></code>
-          <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
-          <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
+      <div class="game-shell">
+        <aside id="leaderboard-panel" class="leaderboard-panel" aria-label="Leaderboard">
+          <div class="leaderboard-header">Leaderboard</div>
+          <div id="leaderboard-meta" class="leaderboard-meta"></div>
+          <div id="leaderboard-body" class="leaderboard-body"></div>
+        </aside>
+        <div class="game-main">
+          <header class="game-ui">
+            <div id="room-hud" class="room-hud hidden">
+              <span class="room-hud-label">Room</span>
+              <code id="room-code-display" class="room-code-display"></code>
+              <button type="button" id="btn-copy-code" class="btn-secondary">Copy code</button>
+              <button type="button" id="btn-copy-link" class="btn-secondary">Copy invite link</button>
+            </div>
+            <p id="game-hint" class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
+          </header>
+          <div id="canvas-wrap" class="canvas-wrap">
+            <canvas id="c" aria-label="Game"></canvas>
+          </div>
         </div>
-        <p id="game-hint" class="hint game-hint">WASD / arrows — move &amp; turn · Space — fire</p>
-        <div id="scores" class="scores-bar"></div>
-      </header>
-      <div id="canvas-wrap" class="canvas-wrap">
-        <canvas id="c" aria-label="Game"></canvas>
       </div>
     </div>
 

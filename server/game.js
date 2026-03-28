@@ -27,6 +27,16 @@ const BULLET_OWNER_GRACE_MS = 180;
 const PLAYER_MAX_HP = 100;
 const PLAYER_BULLET_DAMAGE = 34;
 const ENEMY_MAX_HP = 90;
+/** Family Feud (arena): delay before respawn after elimination. */
+const ARENA_RESPAWN_DELAY_MS = 2800;
+/** Arena: first to this many kills regenerates the maze and clears scores. */
+const ARENA_KILL_LIMIT = 30;
+const DEFAULT_MAZE_COLS = 10;
+const DEFAULT_MAZE_ROWS = 7;
+const MIN_MAZE_COLS = 6;
+const MAX_MAZE_COLS = 16;
+const MIN_MAZE_ROWS = 5;
+const MAX_MAZE_ROWS = 12;
 
 const WEAPON_TYPES = ["shotgun", "rocket", "sniper", "minigun"];
 
@@ -229,16 +239,28 @@ function cellsToWallRects(cells, cols, rows, innerX, innerY, cellW, cellH, wallT
   return walls;
 }
 
-function generateMaze(rng) {
+function resolveMazeDim(v, fallback, lo, hi) {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+export function normalizeMazeDims(colsIn, rowsIn) {
+  return {
+    mazeCols: resolveMazeDim(colsIn, DEFAULT_MAZE_COLS, MIN_MAZE_COLS, MAX_MAZE_COLS),
+    mazeRows: resolveMazeDim(rowsIn, DEFAULT_MAZE_ROWS, MIN_MAZE_ROWS, MAX_MAZE_ROWS),
+  };
+}
+
+function generateMaze(rng, colsIn, rowsIn) {
   const wallRects = outerBorderWalls();
   const innerX = BORDER;
   const innerY = BORDER;
   const innerW = ARENA_W - 2 * BORDER;
   const innerH = ARENA_H - 2 * BORDER;
 
-  /* Fewer, larger cells → wide corridors (inner ~868×608 → ~87×87px cells). */
-  const cols = 10;
-  const rows = 7;
+  const cols = resolveMazeDim(colsIn, DEFAULT_MAZE_COLS, MIN_MAZE_COLS, MAX_MAZE_COLS);
+  const rows = resolveMazeDim(rowsIn, DEFAULT_MAZE_ROWS, MIN_MAZE_ROWS, MAX_MAZE_ROWS);
   const cellW = innerW / cols;
   const cellH = innerH / rows;
 
@@ -401,8 +423,10 @@ function randomSpawn(rng, walls) {
 }
 
 export class GameRoom {
-  constructor(mode = "arena") {
+  constructor(mode = "arena", opts = {}) {
     this.mode = mode;
+    this.mazeCols = opts.mazeCols ?? DEFAULT_MAZE_COLS;
+    this.mazeRows = opts.mazeRows ?? DEFAULT_MAZE_ROWS;
     this.players = new Map();
     this.bullets = [];
     this.nextBulletId = 1;
@@ -411,7 +435,9 @@ export class GameRoom {
     this._rng = Math.random;
     this._nextEnemySlot = 0;
     this.explosions = [];
-    const generated = generateMaze(this._rng);
+    this.arenaResetBanner = null;
+    this.dmRound = 1;
+    const generated = generateMaze(this._rng, this.mazeCols, this.mazeRows);
     this.walls = generated.walls;
     this.maze = generated.maze;
     this.enemies = [];
@@ -419,6 +445,83 @@ export class GameRoom {
     this.pveWave = 1;
     /** When > 0, timestamp (ms) until next wave spawns. */
     this.pveIntermissionEnd = 0;
+  }
+
+  _applyMazeFromGenerated(generated) {
+    this.walls = generated.walls;
+    this.maze = generated.maze;
+  }
+
+  _regenerateMazeAndRepositionPlayers() {
+    const gen = generateMaze(this._rng, this.mazeCols, this.mazeRows);
+    this._applyMazeFromGenerated(gen);
+    this.bullets = [];
+    this.explosions = [];
+    for (const p of this.players.values()) {
+      this._respawnTankAtRandom(p);
+      p.respawnAt = 0;
+    }
+  }
+
+  /** Arena: someone reached kill limit — new maze, everyone score 0. */
+  _arenaKillLimitReset(championId) {
+    for (const p of this.players.values()) {
+      p.score = 0;
+    }
+    this._regenerateMazeAndRepositionPlayers();
+    this.arenaResetBanner = { winnerId: championId, until: Date.now() + 4500 };
+  }
+
+  /** Deathmatch: one survivor; new round, +1 round win already applied to survivor. */
+  _deathmatchNextRound() {
+    const gen = generateMaze(this._rng, this.mazeCols, this.mazeRows);
+    this._applyMazeFromGenerated(gen);
+    this.bullets = [];
+    this.explosions = [];
+    this.dmRound += 1;
+    for (const p of this.players.values()) {
+      this._respawnTankAtRandom(p);
+      p.respawnAt = 0;
+    }
+  }
+
+  _deathmatchTryEndRound() {
+    if (this.mode !== "deathmatch") return;
+    if (this.players.size < 2) return;
+    const alive = [...this.players.values()].filter((p) => p.alive);
+    if (alive.length !== 1) return;
+    alive[0].score += 1;
+    this._deathmatchNextRound();
+  }
+
+  _maybeArenaKillLimit(killer) {
+    if (this.mode !== "arena" || !killer) return;
+    if (killer.score >= ARENA_KILL_LIMIT) {
+      this._arenaKillLimitReset(killer.id);
+    }
+  }
+
+  _onPlayerHpDepleted(p, killer, now) {
+    if (this.mode !== "deathmatch") {
+      if (killer && killer.id !== p.id) {
+        killer.score += 1;
+        this._maybeArenaKillLimit(killer);
+      }
+    }
+    this.deathEvents += 1;
+    if (this.mode === "deathmatch") {
+      p.alive = false;
+      p.hp = 0;
+      p.respawnAt = 0;
+      return;
+    }
+    if (this.mode === "arena") {
+      p.alive = false;
+      p.hp = 0;
+      p.respawnAt = now + ARENA_RESPAWN_DELAY_MS;
+      return;
+    }
+    this._respawnTankAtRandom(p);
   }
 
   _pveEnemiesToSpawnThisWave() {
@@ -442,6 +545,7 @@ export class GameRoom {
       alive: true,
       hp: ENEMY_MAX_HP,
       maxHp: ENEMY_MAX_HP,
+      weaponType: "minigun",
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
       _lastPath: null,
@@ -481,6 +585,7 @@ export class GameRoom {
       score: 0,
       weaponType,
       lastFire: 0,
+      respawnAt: 0,
       input: { forward: false, back: false, left: false, right: false, fire: false },
     });
     this._pveMaybeSpawnInitialWave();
@@ -669,20 +774,24 @@ export class GameRoom {
 
   _applySplashDamage(ownerId, cx, cy, radius, damage, now) {
     if (!radius || !damage) return;
+    const killer = this.players.get(ownerId);
     for (const p of this.players.values()) {
       if (!p.alive) continue;
       if (this.mode === "pve" && this.players.has(ownerId)) continue;
-      if (p.id === ownerId && now - (this.players.get(ownerId)?.lastFire || now) < BULLET_OWNER_GRACE_MS) {
+      if (
+        p.id === ownerId &&
+        (this.mode === "arena" || this.mode === "pve" || this.mode === "deathmatch")
+      ) {
+        continue;
+      }
+      if (p.id === ownerId && now - (killer?.lastFire || now) < BULLET_OWNER_GRACE_MS) {
         continue;
       }
       const d = Math.hypot(p.x - cx, p.y - cy);
       if (d > radius) continue;
-      const killer = this.players.get(ownerId);
       p.hp -= damage;
       if (p.hp <= 0) {
-        if (killer && killer.id !== p.id) killer.score += 1;
-        this.deathEvents += 1;
-        this._respawnTankAtRandom(p);
+        this._onPlayerHpDepleted(p, killer, now);
       }
     }
   }
@@ -722,6 +831,17 @@ export class GameRoom {
 
   step(now) {
     this.tick++;
+
+    if (this.arenaResetBanner && now > (this.arenaResetBanner.until || 0)) {
+      this.arenaResetBanner = null;
+    }
+
+    for (const p of this.players.values()) {
+      if (!p.alive && (p.respawnAt || 0) > 0 && now >= p.respawnAt) {
+        this._respawnTankAtRandom(p);
+        p.respawnAt = 0;
+      }
+    }
 
     if (this.explosions.length > 0) {
       this.explosions = this.explosions
@@ -825,7 +945,7 @@ export class GameRoom {
           for (const p of this.players.values()) {
             if (!p.alive) continue;
             if (p.id === b.ownerId) {
-              if (this.mode === "pve") continue;
+              if (this.mode === "pve" || this.mode === "arena" || this.mode === "deathmatch") continue;
               if (now - b.born < BULLET_OWNER_GRACE_MS) continue;
             }
             const d = Math.hypot(p.x - b.x, p.y - b.y);
@@ -837,9 +957,7 @@ export class GameRoom {
                 this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now);
               }
               if (p.hp <= 0) {
-                if (killer && killer.id !== p.id) killer.score += 1;
-                this.deathEvents += 1;
-                this._respawnTankAtRandom(p);
+                this._onPlayerHpDepleted(p, killer, now);
               }
               if ((b.pierceLeft || 0) > 0) {
                 b.pierceLeft -= 1;
@@ -862,26 +980,38 @@ export class GameRoom {
         this.bullets = [];
       }
     }
+
+    this._deathmatchTryEndRound();
   }
 
   getSnapshot() {
+    const now = Date.now();
     const snap = {
       mode: this.mode,
+      serverNow: now,
+      mazeCols: this.mazeCols,
+      mazeRows: this.mazeRows,
       arena: { w: ARENA_W, h: ARENA_H },
       walls: this.walls,
-      players: Array.from(this.players.values()).map((p) => ({
-        id: p.id,
-        name: p.name,
-        x: p.x,
-        y: p.y,
-        angle: p.angle,
-        alive: p.alive,
-        hp: p.hp,
-        maxHp: p.maxHp,
-        score: p.score,
-        weaponType: p.weaponType || "minigun",
-        weaponName: (WEAPON_PROFILES[p.weaponType] || WEAPON_PROFILES.minigun).name,
-      })),
+      players: Array.from(this.players.values()).map((p) => {
+        const prof = WEAPON_PROFILES[p.weaponType] || WEAPON_PROFILES.minigun;
+        return {
+          id: p.id,
+          name: p.name,
+          x: p.x,
+          y: p.y,
+          angle: p.angle,
+          alive: p.alive,
+          hp: p.hp,
+          maxHp: p.maxHp,
+          score: p.score,
+          weaponType: p.weaponType || "minigun",
+          weaponName: prof.name,
+          weaponCooldownMs: prof.fireCooldownMs,
+          lastFiredAt: p.lastFire,
+          respawnAt: p.respawnAt || 0,
+        };
+      }),
       bullets: this.bullets.map((b) => ({
         id: b.id,
         x: b.x,
@@ -903,7 +1033,13 @@ export class GameRoom {
       })),
       deathEvents: this.deathEvents,
       tick: this.tick,
+      arenaResetBanner: this.arenaResetBanner,
+      arenaKillLimit: ARENA_KILL_LIMIT,
+      arenaRespawnDelayMs: ARENA_RESPAWN_DELAY_MS,
     };
+    if (this.mode === "deathmatch") {
+      snap.dmRound = this.dmRound;
+    }
     if (this.mode === "pve") {
       snap.pveWave = this.pveWave;
       snap.pveIntermissionEnd = this.pveIntermissionEnd;

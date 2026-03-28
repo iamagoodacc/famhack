@@ -3,7 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
-import { GameRoom } from "./game.js";
+import { GameRoom, normalizeMazeDims } from "./game.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -60,7 +60,7 @@ setInterval(() => {
 }, TICK_MS);
 
 /** Supported handshake `mode` values — add entries when you ship new modes (match client GAME_MODES). */
-const ALLOWED_MODES = new Set(["arena", "pve"]);
+const ALLOWED_MODES = new Set(["arena", "pve", "deathmatch"]);
 
 io.on("connection", (socket) => {
   const name = socket.handshake.query?.name || "Player";
@@ -70,9 +70,11 @@ io.on("connection", (socket) => {
   const rawRoom = String(socket.handshake.query?.room ?? "new").trim().toLowerCase();
   let roomCode;
 
+  const mazeDims = normalizeMazeDims(socket.handshake.query?.mazeCols, socket.handshake.query?.mazeRows);
+
   if (rawRoom === "" || rawRoom === "new" || rawRoom === "create") {
     roomCode = generateRoomCode();
-    rooms.set(roomCode, new GameRoom(mode));
+    rooms.set(roomCode, new GameRoom(mode, mazeDims));
   } else {
     roomCode = normalizeRoomCode(rawRoom);
     if (!roomCode || roomCode.length !== CODE_LEN || !rooms.has(roomCode)) {
