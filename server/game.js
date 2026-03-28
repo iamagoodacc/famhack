@@ -352,6 +352,7 @@ export class GameRoom {
     this.players = new Map();
     this.bullets = [];
     this.nextBulletId = 1;
+    this.deathEvents = 0;
     this.tick = 0;
     this._rng = Math.random;
     this._nextEnemySlot = 0;
@@ -627,6 +628,7 @@ export class GameRoom {
           if (d < TANK_R + BULLET_R - 0.5) {
             const killer = this.players.get(b.ownerId);
             if (killer) killer.score += 1;
+            this.deathEvents += 1;
             dead = true;
             this._respawnTankAtRandom(e);
             break;
@@ -642,6 +644,7 @@ export class GameRoom {
           if (d < TANK_R + BULLET_R - 0.5) {
             const killer = this.players.get(b.ownerId);
             if (killer && killer.id !== p.id) killer.score += 1;
+            this.deathEvents += 1;
             dead = true;
             this._respawnTankAtRandom(p);
             break;
@@ -674,6 +677,7 @@ export class GameRoom {
         y: b.y,
         ownerId: b.ownerId,
       })),
+      deathEvents: this.deathEvents,
       tick: this.tick,
     };
     if (this.mode === "pve") {

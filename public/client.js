@@ -55,6 +55,90 @@ let gameActive = false;
 let selectedModeId = "arena";
 let currentRoomCode = null;
 
+const SHOOT_SOUND_SRC = "assets/audio/shoot.mp3";
+const DEATH_SOUND_SRC = "assets/audio/death.mp3";
+const MUSIC_SRC = "assets/audio/music.mp3";
+
+const SHOOT_SOUND_POOL_SIZE = 6;
+const DEATH_SOUND_POOL_SIZE = 4;
+
+const shootSoundPool = Array.from({ length: SHOOT_SOUND_POOL_SIZE }, () => {
+  const audio = new Audio(SHOOT_SOUND_SRC);
+  audio.preload = "auto";
+  audio.volume = 0.5;
+  return audio;
+});
+
+const deathSoundPool = Array.from({ length: DEATH_SOUND_POOL_SIZE }, () => {
+  const audio = new Audio(DEATH_SOUND_SRC);
+  audio.preload = "auto";
+  audio.volume = 0.55;
+  return audio;
+});
+
+const bgMusic = new Audio(MUSIC_SRC);
+bgMusic.preload = "auto";
+bgMusic.loop = true;
+bgMusic.volume = 0.22;
+
+let shootSoundIndex = 0;
+let deathSoundIndex = 0;
+let prevMyBulletIds = new Set();
+let prevDeathEventCount = 0;
+let audioUnlocked = false;
+
+function playFromPool(pool, index) {
+  const audio = pool[index];
+  audio.currentTime = 0;
+  void audio.play().catch(() => {});
+}
+
+function playShootSound() {
+  playFromPool(shootSoundPool, shootSoundIndex);
+  shootSoundIndex = (shootSoundIndex + 1) % shootSoundPool.length;
+}
+
+function playDeathSound() {
+  playFromPool(deathSoundPool, deathSoundIndex);
+  deathSoundIndex = (deathSoundIndex + 1) % deathSoundPool.length;
+}
+
+function tryStartMusic() {
+  if (!audioUnlocked || !gameActive) return;
+  if (!bgMusic.paused) return;
+  void bgMusic.play().catch(() => {});
+}
+
+function stopMusic() {
+  bgMusic.pause();
+  bgMusic.currentTime = 0;
+}
+
+function unlockAudio() {
+  if (audioUnlocked) {
+    tryStartMusic();
+    return;
+  }
+  audioUnlocked = true;
+
+  const probe = shootSoundPool[0];
+  const p = probe.play();
+  if (!p) {
+    probe.pause();
+    probe.currentTime = 0;
+    tryStartMusic();
+    return;
+  }
+
+  p.then(() => {
+    probe.pause();
+    probe.currentTime = 0;
+    tryStartMusic();
+  }).catch(() => {
+    audioUnlocked = false;
+  });
+}
+
 function normalizeRoomCode(raw) {
   return String(raw ?? "")
     .trim()
@@ -224,6 +308,7 @@ function setKey(code, down) {
 }
 
 window.addEventListener("keydown", (e) => {
+  unlockAudio();
   if (!gameActive) return;
   if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.code)) {
     e.preventDefault();
@@ -235,6 +320,8 @@ window.addEventListener("keyup", (e) => {
   if (!gameActive) return;
   setKey(e.code, false);
 });
+
+window.addEventListener("pointerdown", unlockAudio, { passive: true });
 
 function emitInput() {
   if (!gameActive || !socket?.connected) return;
@@ -250,14 +337,18 @@ function enterGame() {
   screenGame.removeAttribute("hidden");
   document.body.classList.add("game-active");
   gameActive = true;
+  tryStartMusic();
   queueMicrotask(() => state && draw());
 }
 
 function leaveGameUi() {
   gameActive = false;
+  stopMusic();
   document.body.classList.remove("game-active");
   roomHud.classList.add("hidden");
   currentRoomCode = null;
+  prevMyBulletIds = new Set();
+  prevDeathEventCount = 0;
   screenGame.classList.add("hidden");
   screenGame.setAttribute("hidden", "");
   screenLobby.classList.remove("hidden");
@@ -293,6 +384,27 @@ function connect(name, mode, roomQuery) {
   });
 
   socket.on("state", (snap) => {
+    const deathEvents = Number(snap?.deathEvents || 0);
+    if (deathEvents > prevDeathEventCount) {
+      for (let i = prevDeathEventCount; i < deathEvents; i++) {
+        playDeathSound();
+      }
+    }
+    prevDeathEventCount = deathEvents;
+
+    if (myId && Array.isArray(snap?.bullets)) {
+      const myBulletIds = new Set();
+      for (const bullet of snap.bullets) {
+        if (bullet.ownerId === myId) myBulletIds.add(bullet.id);
+      }
+      for (const id of myBulletIds) {
+        if (!prevMyBulletIds.has(id)) playShootSound();
+      }
+      prevMyBulletIds = myBulletIds;
+    } else {
+      prevMyBulletIds = new Set();
+    }
+
     state = snap;
     renderScores(snap);
     draw();
