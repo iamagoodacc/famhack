@@ -26,6 +26,60 @@ const MAX_BOUNCES = 12;
 const BULLET_OWNER_GRACE_MS = 180;
 const PLAYER_MAX_HP = 100;
 const PLAYER_BULLET_DAMAGE = 34;
+const ENEMY_MAX_HP = 90;
+
+const WEAPON_TYPES = ["shotgun", "rocket", "sniper", "minigun"];
+
+const WEAPON_PROFILES = {
+  shotgun: {
+    name: "Shotgun",
+    fireCooldownMs: 720,
+    pelletCount: 6,
+    spread: 0.28,
+    bulletSpeed: 8.2,
+    damage: 22,
+    maxBounces: 2,
+    bulletRadius: 3,
+  },
+  rocket: {
+    name: "Rocket Launcher",
+    fireCooldownMs: 930,
+    pelletCount: 1,
+    spread: 0,
+    bulletSpeed: 5.9,
+    damage: 62,
+    maxBounces: 0,
+    bulletRadius: 6,
+    explodeOnWall: true,
+    splashRadius: 52,
+    splashDamage: 44,
+  },
+  sniper: {
+    name: "Sniper Rifle",
+    fireCooldownMs: 980,
+    pelletCount: 1,
+    spread: 0,
+    bulletSpeed: 15,
+    damage: 95,
+    maxBounces: 1,
+    bulletRadius: 2.4,
+    pierce: 1,
+  },
+  minigun: {
+    name: "Minigun",
+    fireCooldownMs: 120,
+    pelletCount: 1,
+    spread: 0.09,
+    bulletSpeed: 8.8,
+    damage: 14,
+    maxBounces: 5,
+    bulletRadius: 3.2,
+  },
+};
+
+function randomWeaponType(rng) {
+  return WEAPON_TYPES[Math.floor(rng() * WEAPON_TYPES.length)];
+}
 
 /** Grid replan interval for PVE enemies (ticks). */
 const ENEMY_PATH_REPLAN = 12;
@@ -356,6 +410,7 @@ export class GameRoom {
     this.tick = 0;
     this._rng = Math.random;
     this._nextEnemySlot = 0;
+    this.explosions = [];
     const generated = generateMaze(this._rng);
     this.walls = generated.walls;
     this.maze = generated.maze;
@@ -385,6 +440,8 @@ export class GameRoom {
       vx: 0,
       vy: 0,
       alive: true,
+      hp: ENEMY_MAX_HP,
+      maxHp: ENEMY_MAX_HP,
       lastFire: 0,
       _pathAge: ENEMY_PATH_REPLAN,
       _lastPath: null,
@@ -409,6 +466,7 @@ export class GameRoom {
 
   addPlayer(id, name) {
     const spawn = randomSpawn(this._rng, this.walls);
+    const weaponType = randomWeaponType(this._rng);
     this.players.set(id, {
       id,
       name: name || `Tank ${this.players.size + 1}`,
@@ -421,6 +479,7 @@ export class GameRoom {
       hp: PLAYER_MAX_HP,
       maxHp: PLAYER_MAX_HP,
       score: 0,
+      weaponType,
       lastFire: 0,
       input: { forward: false, back: false, left: false, right: false, fire: false },
     });
@@ -546,27 +605,98 @@ export class GameRoom {
   }
 
   _tryFire(ent, now) {
-    if (!ent.alive || now - ent.lastFire < FIRE_COOLDOWN_MS) return;
-    const bx = ent.x + Math.cos(ent.angle) * (TANK_R + BULLET_R + 2);
-    const by = ent.y + Math.sin(ent.angle) * (TANK_R + BULLET_R + 2);
-    let blocked = false;
+    if (!ent.alive) return;
+    const profile = WEAPON_PROFILES[ent.weaponType] || {
+      name: "Rifle",
+      fireCooldownMs: FIRE_COOLDOWN_MS,
+      pelletCount: 1,
+      spread: 0,
+      bulletSpeed: BULLET_SPEED,
+      damage: PLAYER_BULLET_DAMAGE,
+      maxBounces: MAX_BOUNCES,
+      bulletRadius: BULLET_R,
+    };
+    if (now - ent.lastFire < profile.fireCooldownMs) return;
+    ent.lastFire = now;
+
+    const pelletCount = profile.pelletCount || 1;
+    if (pelletCount === 1) {
+      const spread = profile.spread || 0;
+      const offset = spread > 0 ? (this._rng() * 2 - 1) * spread : 0;
+      this._spawnBullet(ent, now, ent.angle + offset, profile);
+      return;
+    }
+
+    const spread = profile.spread || 0;
+    const start = -spread / 2;
+    const step = pelletCount > 1 ? spread / (pelletCount - 1) : 0;
+    for (let i = 0; i < pelletCount; i++) {
+      const jitter = (this._rng() * 2 - 1) * step * 0.25;
+      const offset = start + step * i + jitter;
+      this._spawnBullet(ent, now, ent.angle + offset, profile);
+    }
+  }
+
+  _spawnBullet(owner, now, angle, profile) {
+    const radius = profile.bulletRadius ?? BULLET_R;
+    const bx = owner.x + Math.cos(angle) * (TANK_R + radius + 2);
+    const by = owner.y + Math.sin(angle) * (TANK_R + radius + 2);
     for (const w of this.walls) {
-      if (circleRectOverlap(bx, by, BULLET_R, w)) {
-        blocked = true;
-        break;
+      if (circleRectOverlap(bx, by, radius, w)) {
+        return;
       }
     }
-    if (blocked) return;
-    ent.lastFire = now;
+
     this.bullets.push({
       id: this.nextBulletId++,
-      ownerId: ent.id,
+      ownerId: owner.id,
       born: now,
       x: bx,
       y: by,
-      vx: Math.cos(ent.angle) * BULLET_SPEED,
-      vy: Math.sin(ent.angle) * BULLET_SPEED,
+      vx: Math.cos(angle) * (profile.bulletSpeed ?? BULLET_SPEED),
+      vy: Math.sin(angle) * (profile.bulletSpeed ?? BULLET_SPEED),
       bounces: 0,
+      maxBounces: profile.maxBounces ?? MAX_BOUNCES,
+      damage: profile.damage ?? PLAYER_BULLET_DAMAGE,
+      radius,
+      weaponType: owner.weaponType || "minigun",
+      pierceLeft: profile.pierce || 0,
+      explodeOnWall: !!profile.explodeOnWall,
+      splashRadius: profile.splashRadius || 0,
+      splashDamage: profile.splashDamage || 0,
+    });
+  }
+
+  _applySplashDamage(ownerId, cx, cy, radius, damage, now) {
+    if (!radius || !damage) return;
+    for (const p of this.players.values()) {
+      if (!p.alive) continue;
+      if (this.mode === "pve" && this.players.has(ownerId)) continue;
+      if (p.id === ownerId && now - (this.players.get(ownerId)?.lastFire || now) < BULLET_OWNER_GRACE_MS) {
+        continue;
+      }
+      const d = Math.hypot(p.x - cx, p.y - cy);
+      if (d > radius) continue;
+      const killer = this.players.get(ownerId);
+      p.hp -= damage;
+      if (p.hp <= 0) {
+        if (killer && killer.id !== p.id) killer.score += 1;
+        this.deathEvents += 1;
+        this._respawnTankAtRandom(p);
+      }
+    }
+  }
+
+  _spawnExplosion(x, y, weaponType) {
+    const baseR = weaponType === "rocket" ? 56 : 30;
+    this.explosions.push({
+      id: `${this.tick}-${Math.floor(x)}-${Math.floor(y)}-${Math.random().toString(36).slice(2, 7)}`,
+      x,
+      y,
+      r: baseR,
+      life: 14,
+      maxLife: 14,
+      weaponType: weaponType || "rocket",
     });
   }
 
@@ -581,6 +711,9 @@ export class GameRoom {
     if ("maxHp" in ent && "hp" in ent) {
       ent.hp = ent.maxHp;
     }
+    if ("weaponType" in ent) {
+      ent.weaponType = randomWeaponType(this._rng);
+    }
     if ("_lastPath" in ent) {
       ent._lastPath = null;
       ent._pathAge = ENEMY_PATH_REPLAN;
@@ -589,6 +722,12 @@ export class GameRoom {
 
   step(now) {
     this.tick++;
+
+    if (this.explosions.length > 0) {
+      this.explosions = this.explosions
+        .map((e) => ({ ...e, life: e.life - 1 }))
+        .filter((e) => e.life > 0);
+    }
 
     if (this.mode === "pve" && this.pveIntermissionEnd > 0 && now >= this.pveIntermissionEnd) {
       this.pveIntermissionEnd = 0;
@@ -614,6 +753,7 @@ export class GameRoom {
 
     const nextBullets = [];
     for (const b of this.bullets) {
+      const bulletR = b.radius ?? BULLET_R;
       let x = b.x + b.vx;
       let y = b.y + b.vy;
       let vx = b.vx;
@@ -624,7 +764,7 @@ export class GameRoom {
       while (wallGuard++ < 8 && !dead) {
         let hitWall = false;
         for (const w of this.walls) {
-          const res = resolveCircleRect(x, y, BULLET_R, w);
+          const res = resolveCircleRect(x, y, bulletR, w);
           if (!res) continue;
           x = res.cx;
           y = res.cy;
@@ -632,7 +772,11 @@ export class GameRoom {
           vx = vx - 2 * dot * res.nx;
           vy = vy - 2 * dot * res.ny;
           b.bounces++;
-          if (b.bounces > MAX_BOUNCES) {
+          if (b.explodeOnWall) {
+            this._spawnExplosion(x, y, b.weaponType);
+            this._applySplashDamage(b.ownerId, x, y, b.splashRadius, b.splashDamage, now);
+            dead = true;
+          } else if (b.bounces > (b.maxBounces ?? MAX_BOUNCES)) {
             dead = true;
           }
           hitWall = true;
@@ -653,11 +797,22 @@ export class GameRoom {
         for (const e of this.enemies) {
           if (!e.alive) continue;
           const d = Math.hypot(e.x - b.x, e.y - b.y);
-          if (d < TANK_R + BULLET_R - 0.5) {
+          if (d < TANK_R + bulletR - 0.5) {
             const killer = this.players.get(b.ownerId);
-            if (killer) killer.score += 1;
-            dead = true;
-            e.alive = false;
+            e.hp -= b.damage ?? PLAYER_BULLET_DAMAGE;
+            if (e.hp <= 0) {
+              if (killer) killer.score += 1;
+              e.alive = false;
+            }
+            if (b.explodeOnWall) {
+              this._spawnExplosion(b.x, b.y, b.weaponType);
+              this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now);
+              dead = true;
+            } else if ((b.pierceLeft || 0) > 0) {
+              b.pierceLeft -= 1;
+            } else {
+              dead = true;
+            }
             break;
           }
         }
@@ -674,15 +829,23 @@ export class GameRoom {
               if (now - b.born < BULLET_OWNER_GRACE_MS) continue;
             }
             const d = Math.hypot(p.x - b.x, p.y - b.y);
-            if (d < TANK_R + BULLET_R - 0.5) {
+            if (d < TANK_R + bulletR - 0.5) {
               const killer = this.players.get(b.ownerId);
-              p.hp -= PLAYER_BULLET_DAMAGE;
+              p.hp -= b.damage ?? PLAYER_BULLET_DAMAGE;
+              if (b.explodeOnWall) {
+                this._spawnExplosion(b.x, b.y, b.weaponType);
+                this._applySplashDamage(b.ownerId, b.x, b.y, b.splashRadius, b.splashDamage, now);
+              }
               if (p.hp <= 0) {
                 if (killer && killer.id !== p.id) killer.score += 1;
                 this.deathEvents += 1;
                 this._respawnTankAtRandom(p);
               }
-              dead = true;
+              if ((b.pierceLeft || 0) > 0) {
+                b.pierceLeft -= 1;
+              } else {
+                dead = true;
+              }
               break;
             }
           }
@@ -716,12 +879,27 @@ export class GameRoom {
         hp: p.hp,
         maxHp: p.maxHp,
         score: p.score,
+        weaponType: p.weaponType || "minigun",
+        weaponName: (WEAPON_PROFILES[p.weaponType] || WEAPON_PROFILES.minigun).name,
       })),
       bullets: this.bullets.map((b) => ({
         id: b.id,
         x: b.x,
         y: b.y,
+        vx: b.vx,
+        vy: b.vy,
         ownerId: b.ownerId,
+        weaponType: b.weaponType || "minigun",
+        radius: b.radius ?? BULLET_R,
+      })),
+      explosions: this.explosions.map((e) => ({
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        r: e.r,
+        life: e.life,
+        maxLife: e.maxLife,
+        weaponType: e.weaponType,
       })),
       deathEvents: this.deathEvents,
       tick: this.tick,
@@ -736,6 +914,8 @@ export class GameRoom {
         y: e.y,
         angle: e.angle,
         alive: e.alive,
+        hp: e.hp,
+        maxHp: e.maxHp,
       }));
     }
     return snap;

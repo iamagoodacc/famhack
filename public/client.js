@@ -862,7 +862,8 @@ function renderScores(snap) {
     snap.players
       .map((p) => {
         const tag = localIds.has(p.id) ? " (you)" : "";
-        return `<span>${escapeHtml(p.name)}: ${p.score}${tag}</span>`;
+        const weapon = p.weaponName ? ` [${escapeHtml(p.weaponName)}]` : "";
+        return `<span>${escapeHtml(p.name)}: ${p.score}${tag}${weapon}</span>`;
       })
       .join("");
 }
@@ -919,6 +920,68 @@ function drawPlayerHealthBar(ctx, cx, topY, hp, maxHp) {
   ctx.strokeStyle = "rgba(255,240,220,0.25)";
   ctx.lineWidth = 0.6;
   ctx.strokeRect(x + 0.25, topY + 0.25, w - 0.5, hBar - 0.5);
+}
+
+function drawBulletSprite(ctx, b) {
+  const wt = b.weaponType || "minigun";
+  const r = Math.max(2, Number(b.radius) || 3.5);
+
+  if (wt === "shotgun") {
+    ctx.fillStyle = "#f5d28b";
+    ctx.beginPath();
+    ctx.ellipse(b.x, b.y, r * 1.2, r * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(120,80,35,0.65)";
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    return;
+  }
+
+  if (wt === "rocket") {
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = "rgba(255,130,70,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(-r * 1.8, 0, r * 1.6, r * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6f747c";
+    ctx.fillRect(-r * 1.6, -r * 0.9, r * 2.6, r * 1.8);
+    ctx.fillStyle = "#db4d3e";
+    ctx.beginPath();
+    ctx.moveTo(r * 1.1, 0);
+    ctx.lineTo(r * 2, -r * 0.65);
+    ctx.lineTo(r * 2, r * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
+  if (wt === "sniper") {
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const lg = ctx.createLinearGradient(-r * 3, 0, r * 3, 0);
+    lg.addColorStop(0, "#9ecbff");
+    lg.addColorStop(1, "#e6f3ff");
+    ctx.fillStyle = lg;
+    ctx.fillRect(-r * 2.8, -r * 0.45, r * 5.6, r * 0.9);
+    ctx.restore();
+    return;
+  }
+
+  // Minigun default: compact tracer round.
+  ctx.fillStyle = "#c8a050";
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffe8b0";
+  ctx.beginPath();
+  ctx.arc(b.x - r * 0.25, b.y - r * 0.25, Math.max(1, r * 0.45), 0, Math.PI * 2);
+  ctx.fill();
 }
 
 /**
@@ -1179,21 +1242,30 @@ function draw() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
+  const explosions = state.explosions ?? [];
+  for (const ex of explosions) {
+    const maxLife = Math.max(1, Number(ex.maxLife) || 1);
+    const life = Math.max(0, Number(ex.life) || 0);
+    const t = life / maxLife;
+    const radius = (Number(ex.r) || 40) * (1 - t * 0.65);
+
+    const glow = ctx.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, radius);
+    glow.addColorStop(0, `rgba(255, 240, 175, ${0.72 * t})`);
+    glow.addColorStop(0.45, `rgba(255, 136, 52, ${0.7 * t})`);
+    glow.addColorStop(1, "rgba(120, 20, 0, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(80, 70, 62, ${0.24 * t})`;
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, radius * 0.58, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   for (const b of bullets) {
-    // Small solid bullet
-    ctx.fillStyle = "#c8a050";
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffe8b0";
-    ctx.beginPath();
-    ctx.arc(b.x - 0.8, b.y - 0.8, 1.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(100,70,30,0.5)";
-    ctx.lineWidth = 0.6;
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, 3.5, 0, Math.PI * 2);
-    ctx.stroke();
+    drawBulletSprite(ctx, b);
   }
 
   const enemies = state.enemies ?? [];
@@ -1208,6 +1280,10 @@ function draw() {
     ctx.restore();
 
     const nameY = e.y - 20;
+    const eMaxHp = e.maxHp != null ? e.maxHp : 100;
+    const eHp = e.hp != null ? e.hp : eMaxHp;
+    drawPlayerHealthBar(ctx, e.x, nameY - 13, eHp, eMaxHp);
+
     ctx.font = "600 13px Segoe UI, system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;
