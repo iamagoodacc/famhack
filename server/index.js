@@ -114,7 +114,7 @@ io.on("connection", (socket) => {
 
 const PORT = Number(process.env.PORT) || 3000;
 httpServer.listen(PORT, () => {
-  console.log(`Tank arena at http://localhost:${PORT}`);
+  console.log(`Family Trouble at http://localhost:${PORT}`);
 });
 
 httpServer.on("error", (err) => {

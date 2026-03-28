@@ -10,8 +10,8 @@ body {
 }
 
 body {
-  background: radial-gradient(ellipse 90% 70% at 50% 15%, #1e2a3d 0%, #0a0e14 55%);
-  color: #e6edf3;
+  background: radial-gradient(ellipse 90% 70% at 50% 15%, #3d2b1a 0%, #1a120b 55%);
+  color: #f0e6d8;
   font-family: "Segoe UI", system-ui, sans-serif;
   display: flex;
   flex-direction: column;
@@ -42,8 +42,8 @@ body.game-active {
 .lobby-card {
   width: 100%;
   padding: 1.75rem 1.5rem 1.5rem;
-  background: rgba(22, 27, 34, 0.92);
-  border: 1px solid #30363d;
+  background: rgba(45, 32, 20, 0.92);
+  border: 1px solid #5a4030;
   border-radius: 12px;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(8px);
@@ -54,7 +54,7 @@ body.game-active {
   font-weight: 700;
   font-size: 1.5rem;
   letter-spacing: 0.03em;
-  color: #7ee787;
+  color: #f5c96a;
   text-align: center;
 }
 
@@ -72,7 +72,7 @@ body.game-active {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #8b949e;
+  color: #b8a08a;
   margin-bottom: 0.35rem;
 }
 
@@ -80,23 +80,23 @@ body.game-active {
   width: 100%;
   padding: 0.65rem 0.75rem;
   font-size: 1rem;
-  color: #e6edf3;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  color: #f0e6d8;
+  background: #1a120b;
+  border: 1px solid #5a4030;
   border-radius: 8px;
   outline: none;
 }
 
 .field-input:focus {
-  border-color: #58a6ff;
-  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+  border-color: #d4a24c;
+  box-shadow: 0 0 0 3px rgba(212, 162, 76, 0.2);
 }
 
 .field-hint {
   margin: 0 0 0.4rem;
   font-size: 0.8rem;
   line-height: 1.35;
-  color: #8b949e;
+  color: #b8a08a;
 }
 
 .room-input {
@@ -116,7 +116,7 @@ body.game-active {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #8b949e;
+  color: #b8a08a;
   margin-bottom: 0.5rem;
   padding: 0;
 }
@@ -132,22 +132,22 @@ body.game-active {
   align-items: flex-start;
   gap: 0.65rem;
   padding: 0.75rem 0.85rem;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: #1a120b;
+  border: 1px solid #5a4030;
   border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
 
 .mode-option:hover:not(.mode-option--disabled) {
-  border-color: #484f58;
-  background: #111820;
+  border-color: #7a6050;
+  background: #261a10;
 }
 
 .mode-option--selected {
-  border-color: #58a6ff;
-  background: #111820;
-  box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.35);
+  border-color: #d4a24c;
+  background: #261a10;
+  box-shadow: 0 0 0 1px rgba(212, 162, 76, 0.35);
 }
 
 .mode-option--disabled {
@@ -157,7 +157,7 @@ body.game-active {
 
 .mode-option input {
   margin-top: 0.2rem;
-  accent-color: #58a6ff;
+  accent-color: #d4a24c;
 }
 
 .mode-option-body {
@@ -168,14 +168,14 @@ body.game-active {
 .mode-option-title {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #e6edf3;
+  color: #f0e6d8;
 }
 
 .mode-option-desc {
   margin: 0.2rem 0 0;
   font-size: 0.8rem;
   line-height: 1.35;
-  color: #8b949e;
+  color: #b8a08a;
 }
 
 .mode-badge {
@@ -186,8 +186,8 @@ body.game-active {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #d2a8ff;
-  background: rgba(210, 168, 255, 0.12);
+  color: #f5c96a;
+  background: rgba(245, 201, 106, 0.12);
   border-radius: 4px;
   vertical-align: middle;
 }
@@ -198,12 +198,12 @@ body.game-active {
   padding: 0.75rem 1rem;
   font-size: 1rem;
   font-weight: 600;
-  color: #0d1117;
-  background: linear-gradient(180deg, #7ee787 0%, #56d364 100%);
+  color: #1a120b;
+  background: linear-gradient(180deg, #f5c96a 0%, #d4a24c 100%);
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(87, 171, 90, 0.35);
+  box-shadow: 0 4px 14px rgba(212, 162, 76, 0.35);
 }
 
 .btn-primary:hover {
@@ -223,7 +223,7 @@ body.game-active {
 .lobby-error {
   margin: 0.75rem 0 0;
   font-size: 0.85rem;
-  color: #ff7b72;
+  color: #e07060;
   text-align: center;
 }
 
@@ -240,7 +240,7 @@ body.game-active {
   min-height: 100dvh;
   padding: 0;
   padding-bottom: env(safe-area-inset-bottom, 0);
-  background: radial-gradient(ellipse 100% 80% at 50% 0%, #1a2332 0%, #050608 50%);
+  background: radial-gradient(ellipse 100% 80% at 50% 0%, #2a1d10 0%, #0d0806 50%);
 }
 
 .game-ui {
@@ -259,8 +259,8 @@ body.game-active {
   margin: 0 auto 0.4rem;
   max-width: 56rem;
   padding: 0.5rem 0.85rem;
-  background: rgba(13, 17, 23, 0.75);
-  border: 1px solid rgba(48, 54, 61, 0.9);
+  background: rgba(30, 20, 12, 0.85);
+  border: 1px solid rgba(90, 64, 48, 0.9);
   border-radius: 10px;
   backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
@@ -275,49 +275,49 @@ body.game-active {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: #8b949e;
+  color: #b8a08a;
 }
 
 .room-code-display {
   font-size: clamp(1rem, 2.8vw, 1.2rem);
   font-weight: 700;
   letter-spacing: 0.18em;
-  color: #aff5b4;
-  text-shadow: 0 0 20px rgba(126, 231, 135, 0.35);
+  color: #f5d990;
+  text-shadow: 0 0 20px rgba(245, 201, 106, 0.35);
   background: rgba(0, 0, 0, 0.35);
   padding: 0.2rem 0.6rem;
   border-radius: 6px;
-  border: 1px solid rgba(48, 54, 61, 0.8);
+  border: 1px solid rgba(90, 64, 48, 0.8);
 }
 
 .btn-secondary {
   padding: 0.38rem 0.7rem;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #e6edf3;
-  background: rgba(33, 38, 45, 0.9);
-  border: 1px solid #30363d;
+  color: #f0e6d8;
+  background: rgba(50, 35, 22, 0.9);
+  border: 1px solid #5a4030;
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
 .btn-secondary:hover {
-  background: #30363d;
-  border-color: #484f58;
+  background: #5a4030;
+  border-color: #7a6050;
 }
 
 .game-hint {
   margin: 0;
   font-size: clamp(0.72rem, 1.8vw, 0.82rem);
   opacity: 0.72;
-  color: #8b949e;
+  color: #b8a08a;
 }
 
 .scores-bar {
   margin-top: 0.35rem;
   font-size: clamp(0.8rem, 2vw, 0.92rem);
-  color: #c9d1d9;
+  color: #e8d8c8;
   font-weight: 500;
 }
 
@@ -340,7 +340,7 @@ body.game-active {
   height: 100%;
   min-height: 0;
   display: block;
-  background: #050608;
+  background: #1a120b;
   border: none;
   border-radius: 0;
   box-shadow: none;

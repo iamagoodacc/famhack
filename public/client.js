@@ -2,20 +2,20 @@
 const GAME_MODES = [
   {
     id: "arena",
-    label: "Classic Arena",
-    description: "Random maze, free-for-all. Bullets bounce off walls.",
+    label: "Family Feud",
+    description: "Random house layout, free-for-all. Bullets bounce off walls.",
     available: true,
   },
   {
     id: "teams",
-    label: "Teams",
-    description: "Same arena with team colors and friendly fire off.",
+    label: "Family Teams",
+    description: "Pick sides in the family dispute. Friendly fire off.",
     available: false,
   },
   {
     id: "survival",
-    label: "Survival",
-    description: "Waves of bots or shrinking ring — placeholder.",
+    label: "Home Invasion",
+    description: "Survive waves of intruders in your family home.",
     available: false,
   },
 ];
@@ -412,73 +412,87 @@ function roundRectPath(ctx, x, y, w, h, r) {
 }
 
 /**
- * Hull 16×12 fits inside server hitbox circle (r=10). Treads sit outside for look only.
- * Flat fills. Barrel ends ~16px — near bullet spawn (TANK_R + BULLET_R + 2).
+ * Top-down person with a gun. Fits inside server hitbox circle (r=10).
+ * Facing right (angle=0). Person body is ~12px wide, gun extends forward.
  */
 function drawTankSprite(ctx, hullColor, isLocal) {
-  const hullW = 30;
-  const hullH = 20;
-  const treadW = 2.5;
-  const lx = -hullW / 2;
-  const ly = -hullH / 2;
-  const treadFill = "#1a1f26";
-  const treadLine = "#30363d";
-
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.beginPath();
-  ctx.ellipse(0, 6, 8.5, 3.5, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = treadFill;
-  ctx.fillRect(lx - treadW, ly + 0.5, treadW, hullH - 1);
-  ctx.fillRect(lx + hullW, ly + 0.5, treadW, hullH - 1);
-  ctx.strokeStyle = treadLine;
-  ctx.lineWidth = 1;
-  for (let ty = ly + 2; ty < ly + hullH - 1; ty += 3) {
-    ctx.beginPath();
-    ctx.moveTo(lx - treadW + 0.5, ty);
-    ctx.lineTo(lx - 0.5, ty);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(lx + hullW + 0.5, ty);
-    ctx.lineTo(lx + hullW + treadW - 0.5, ty);
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-  roundRectPath(ctx, lx, ly, hullW, hullH, 2);
-  ctx.fillStyle = hullColor;
-  ctx.fill();
-  ctx.strokeStyle = isLocal ? "#dce3ee" : "rgba(255,255,255,0.5)";
-  ctx.lineWidth = isLocal ? 1.85 : 1.2;
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(0,0,0,0.16)";
-  ctx.fillRect(lx + 2, ly + 1.5, hullW - 4, 2.5);
-
-  const turretFill = shadeColor(hullColor, -24);
-  ctx.fillStyle = turretFill;
-  ctx.beginPath();
-  ctx.arc(0, ly + 3.8, 3.6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
+  // Shadow on ground
   ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.beginPath();
-  ctx.arc(0, ly + 3.8, 1.4, 0, Math.PI * 2);
+  ctx.ellipse(0, 2, 9, 6, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  const by = -2;
-  ctx.fillStyle = "#2d333b";
-  ctx.fillRect(3.5, by - 0.8, 4, 5);
-  ctx.fillStyle = "#252a31";
-  ctx.fillRect(6.5, by - 1, 9.5, 5.2);
-  ctx.fillStyle = "#4b5563";
-  ctx.fillRect(15.5, by - 0.6, 2.5, 4.4);
-  ctx.fillStyle = "#9ca3af";
-  ctx.fillRect(17.5, by - 0.15, 1, 3.5);
+  // Legs (two small ovals behind body)
+  ctx.fillStyle = shadeColor(hullColor, -40);
+  ctx.beginPath();
+  ctx.ellipse(-3, -4.5, 3, 2.2, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-3, 4.5, 3, 2.2, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body (torso - larger oval)
+  ctx.fillStyle = hullColor;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 6, 5.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = isLocal ? "#fff" : "rgba(255,255,255,0.4)";
+  ctx.lineWidth = isLocal ? 1.5 : 0.8;
+  ctx.stroke();
+
+  // Shirt collar / detail line
+  ctx.strokeStyle = shadeColor(hullColor, -20);
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(0, 0, 3.5, -0.8, 0.8);
+  ctx.stroke();
+
+  // Arm holding gun (right arm extends forward)
+  ctx.fillStyle = shadeColor(hullColor, -15);
+  // Upper arm
+  ctx.beginPath();
+  ctx.moveTo(3, -2);
+  ctx.lineTo(9, -2.5);
+  ctx.lineTo(9, 0.5);
+  ctx.lineTo(3, 1);
+  ctx.closePath();
+  ctx.fill();
+
+  // Other arm (left, tucked)
+  ctx.beginPath();
+  ctx.moveTo(1, 3);
+  ctx.lineTo(6, 2.5);
+  ctx.lineTo(6, 4.5);
+  ctx.lineTo(1, 5);
+  ctx.closePath();
+  ctx.fill();
+
+  // Gun
+  ctx.fillStyle = "#3a3a3a";
+  ctx.fillRect(8, -2.2, 10, 3.2);  // gun body
+  ctx.fillStyle = "#2a2a2a";
+  ctx.fillRect(16, -1.8, 3, 2.4);  // barrel
+  ctx.fillStyle = "#555";
+  ctx.fillRect(8, -2.2, 2, 3.2);   // grip area
+  // Muzzle
+  ctx.fillStyle = "#666";
+  ctx.fillRect(18.5, -1.2, 1.2, 1.2);
+
+  // Head (circle on top)
+  const skinTone = "#e0b896";
+  ctx.fillStyle = skinTone;
+  ctx.beginPath();
+  ctx.arc(1, 0, 3.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+
+  // Hair (crescent on back of head)
+  ctx.fillStyle = shadeColor(hullColor, -50);
+  ctx.beginPath();
+  ctx.arc(0.2, 0, 3.9, Math.PI * 0.55, Math.PI * 1.45);
+  ctx.fill();
 }
 
 function draw() {
@@ -492,7 +506,7 @@ function draw() {
   canvas.width = cw * dpr;
   canvas.height = ch * dpr;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#030508";
+  ctx.fillStyle = "#1a120b";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const { arena, walls, players, bullets } = state;
@@ -506,7 +520,7 @@ function draw() {
   const oy = (ch - ah * scale) / 2;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = "#030508";
+  ctx.fillStyle = "#1a120b";
   ctx.fillRect(0, 0, cw, ch);
 
   ctx.save();
@@ -516,36 +530,45 @@ function draw() {
   ctx.translate(ox, oy);
   ctx.scale(scale, scale);
 
-  const bg = ctx.createRadialGradient(aw * 0.45, ah * 0.35, 0, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.85);
-  bg.addColorStop(0, "#141a24");
-  bg.addColorStop(0.55, "#0c1018");
-  bg.addColorStop(1, "#06080d");
-  ctx.fillStyle = bg;
+  // Wooden floor background
+  ctx.fillStyle = "#5c4033";
   ctx.fillRect(0, 0, aw, ah);
-
-  ctx.strokeStyle = "rgba(88, 166, 255, 0.06)";
+  // Floor planks
+  ctx.strokeStyle = "rgba(40,25,15,0.3)";
   ctx.lineWidth = 1;
-  const gridStep = 40;
-  for (let x = 0; x <= aw; x += gridStep) {
+  const plankW = 35;
+  for (let x = 0; x <= aw; x += plankW) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, ah);
     ctx.stroke();
   }
-  for (let y = 0; y <= ah; y += gridStep) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(aw, y);
-    ctx.stroke();
+  // Horizontal plank joints (staggered)
+  ctx.strokeStyle = "rgba(40,25,15,0.2)";
+  ctx.lineWidth = 0.5;
+  const plankH = 80;
+  for (let y = 0; y <= ah; y += plankH) {
+    for (let x = 0; x <= aw; x += plankW) {
+      const offset = ((x / plankW) % 2) * (plankH / 2);
+      ctx.beginPath();
+      ctx.moveTo(x, y + offset);
+      ctx.lineTo(x + plankW, y + offset);
+      ctx.stroke();
+    }
   }
+  // Warm light gradient overlay
+  const floorLight = ctx.createRadialGradient(aw * 0.5, ah * 0.4, 0, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.7);
+  floorLight.addColorStop(0, "rgba(120,90,50,0.15)");
+  floorLight.addColorStop(1, "rgba(0,0,0,0.2)");
+  ctx.fillStyle = floorLight;
+  ctx.fillRect(0, 0, aw, ah);
 
   for (const wall of walls) {
+    // Render walls slightly thinner than their collision geometry
     let wx = wall.x;
     let wy = wall.y;
     let ww = wall.w;
     let wh = wall.h;
-
-    // Render walls slightly thinner than their collision geometry.
     if (wall.w >= wall.h) {
       const thinH = wall.h * 0.78;
       wy += (wall.h - thinH) / 2;
@@ -556,13 +579,45 @@ function draw() {
       ww = thinW;
     }
 
-    ctx.fillStyle = "#3d4450";
+    // House wall base
+    ctx.fillStyle = "#c4a882";
     ctx.fillRect(wx, wy, ww, wh);
+    // Wall texture - subtle plaster lines
+    ctx.strokeStyle = "rgba(180,155,120,0.4)";
+    ctx.lineWidth = 0.5;
+    if (ww > wh) {
+      for (let ly = wy + 3; ly < wy + wh; ly += 4) {
+        ctx.beginPath();
+        ctx.moveTo(wx, ly);
+        ctx.lineTo(wx + ww, ly);
+        ctx.stroke();
+      }
+    } else {
+      for (let lx = wx + 3; lx < wx + ww; lx += 4) {
+        ctx.beginPath();
+        ctx.moveTo(lx, wy);
+        ctx.lineTo(lx, wy + wh);
+        ctx.stroke();
+      }
+    }
+    // Baseboard trim
+    ctx.fillStyle = "#8b6f4e";
+    if (ww > wh) {
+      ctx.fillRect(wx, wy + wh - 2, ww, 2);
+      ctx.fillRect(wx, wy, ww, 1.5);
+    } else {
+      ctx.fillRect(wx + ww - 2, wy, 2, wh);
+      ctx.fillRect(wx, wy, 1.5, wh);
+    }
+    // Wall edge shadow
+    ctx.strokeStyle = "rgba(60,40,20,0.35)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(wx + 0.5, wy + 0.5, ww - 1, wh - 1);
   }
 
   const vignette = ctx.createRadialGradient(aw * 0.5, ah * 0.5, Math.min(aw, ah) * 0.25, aw * 0.5, ah * 0.5, Math.max(aw, ah) * 0.65);
   vignette.addColorStop(0, "rgba(0,0,0,0)");
-  vignette.addColorStop(1, "rgba(0,0,0,0.35)");
+  vignette.addColorStop(1, "rgba(30,15,0,0.3)");
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, aw, ah);
 
